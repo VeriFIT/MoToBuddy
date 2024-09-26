@@ -379,14 +379,14 @@ DESCR   {* Saves the nodes used by {\tt r} to either a file {\tt ofile}
 ALSO    {* bdd\_load *}
 RETURN  {* Zero on succes, otherwise an error code from {\tt bdd.h}. *}
 */
-int bdd_fnsave(char *fname, BDD r)
+int bdd_fnsave(char *fname, BDD r, char *bddname, char *bddtype)
 {
    FILE *ofile;
    int ok;
 
    if ((ofile=fopen(fname,"w")) == NULL)
       return bdd_error(BDD_FILE);
-
+   fprintf(ofile, "@%s\n%%Name %s\n", bddtype, bddname);
    ok = bdd_save(ofile, r);
    fclose(ofile);
    return ok;
@@ -399,7 +399,7 @@ int bdd_save(FILE *ofile, BDD r)
 
    if (r < 2)
    {
-      fprintf(ofile, "0 0 %d\n", r);
+      fprintf(ofile, "%%Vars 0\n%%Root %d\n", r);
       return 0;
    }
 

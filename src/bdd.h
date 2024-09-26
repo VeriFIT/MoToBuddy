@@ -322,7 +322,7 @@ extern void     bdd_printset(BDD);
 extern int      bdd_fnprintdot(char *, BDD);
 extern void     bdd_fprintdot(FILE *, BDD);
 extern void     bdd_printdot(BDD);
-extern int      bdd_fnsave(char *, BDD);
+extern int      bdd_fnsave(char *, BDD, char *, char *);
 extern int      bdd_save(FILE *, BDD);
 extern int      bdd_fnload(char *, BDD *);
 extern int      bdd_load(FILE *ifile, BDD *);
