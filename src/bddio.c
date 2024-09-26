@@ -399,13 +399,13 @@ int bdd_save(FILE *ofile, BDD r)
 
    if (r < 2)
    {
-      fprintf(ofile, "%%Vars 0\n%%Root %d\n", r);
+      fprintf(ofile, "%%Vars 0\n%%Nodes 1\n%%Root %d\n", r);
       return 0;
    }
 
    bdd_markcount(r, &n);
    bdd_unmark(r);
-   fprintf(ofile, "%%Vars %d\n %%Root %d\n", bddvarnum, r);
+   fprintf(ofile, "%%Vars %d\n%%Nodes %d\n%%Root %d\n", bddvarnum, n, r);
 
    fprintf(ofile, "%%Ordering ");
    for (n=0 ; n<bddvarnum ; n++)
