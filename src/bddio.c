@@ -436,9 +436,26 @@ static int bdd_save_rec(FILE *ofile, int root)
    if ((err=bdd_save_rec(ofile, HIGHp(node))) < 0)
       return err;
 
-   fprintf(ofile, "%d %d %d %d\n",
-	   root, bddlevel2var[LEVELp(node) & MARKHIDE],
-	   LOWp(node), HIGHp(node));
+   fprintf(ofile, "%d[%d] ",
+	   root, bddlevel2var[LEVELp(node) & MARKHIDE]);
+
+   if (ISCONST(LOWp(node)))
+   {
+      fprintf(ofile, "<%d> ", LOWp(node));
+   }
+   else
+   {
+      fprintf(ofile, "%d ", LOWp(node));
+   }
+
+   if (ISCONST(HIGHp(node)))
+   {
+      fprintf(ofile, "<%d>\n", HIGHp(node));
+   }
+   else
+   {
+      fprintf(ofile, "%d\n", HIGHp(node));
+   }
 
    return 0;
 }
