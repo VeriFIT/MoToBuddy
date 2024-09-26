@@ -405,8 +405,9 @@ int bdd_save(FILE *ofile, BDD r)
 
    bdd_markcount(r, &n);
    bdd_unmark(r);
-   fprintf(ofile, "%d %d\n", n, bddvarnum);
+   fprintf(ofile, "%%Vars %d\n %%Root %d\n", bddvarnum, r);
 
+   fprintf(ofile, "%%Ordering ");
    for (n=0 ; n<bddvarnum ; n++)
       fprintf(ofile, "%d ", bddvar2level[n]);
    fprintf(ofile, "\n");
