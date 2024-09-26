@@ -399,7 +399,7 @@ int bdd_save(FILE *ofile, BDD r)
 
    if (r < 2)
    {
-      fprintf(ofile, "%%Vars 0\n%%Nodes 1\n%%Root %d\n", r);
+      fprintf(ofile, "%%Vars 0\n%%Nodes 0\n%%Root %d\n", r);
       return 0;
    }
 
@@ -438,24 +438,8 @@ static int bdd_save_rec(FILE *ofile, int root)
 
    fprintf(ofile, "%d[%d] ",
 	   root, bddlevel2var[LEVELp(node) & MARKHIDE]);
-
-   if (ISCONST(LOWp(node)))
-   {
-      fprintf(ofile, "<%d> ", LOWp(node));
-   }
-   else
-   {
-      fprintf(ofile, "%d ", LOWp(node));
-   }
-
-   if (ISCONST(HIGHp(node)))
-   {
-      fprintf(ofile, "<%d>\n", HIGHp(node));
-   }
-   else
-   {
-      fprintf(ofile, "%d\n", HIGHp(node));
-   }
+   fprintf(ofile, "%d ", LOWp(node));
+   fprintf(ofile, "%d\n", HIGHp(node));
 
    return 0;
 }
