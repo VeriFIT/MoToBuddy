@@ -584,7 +584,7 @@ int bdd_load(FILE *ifile, BDD *root)
                      token = strtok(NULL, " ");
                      if(token == NULL)
                         return BDD_FORMAT;
-                     loadvar2level[n] = strtol(token, convCheck, 10);
+                     loadvar2level[n] = strtol(token, &convCheck, 10);
                      if (*convCheck != '\0')
                         return bdd_error(BDD_FORMAT);
                   }
@@ -602,14 +602,17 @@ int bdd_load(FILE *ifile, BDD *root)
       }
    }
 
-   if (lh_nodenum==0  &&  vnum==0 && partsRead==5)
+   if (lh_nodenum==0  &&  vnum==0)
    {
-      return 0;
+      if(partsRead==5)
+         return 0;
+      else
+         return BDD_FORMAT;
    }
 
    if(partsRead != 6)
       return BDD_FORMAT;
-      
+
    if (vnum > bddvarnum)
       bdd_setvarnum(vnum);
 
@@ -645,11 +648,18 @@ int bdd_load(FILE *ifile, BDD *root)
 static int bdd_loaddata(FILE *ifile)
 {
    int key,var,low,high,root=0,n;
+   char line[1000] = "";
 
    for (n=0 ; n<lh_nodenum ; n++)
    {
-      if (fscanf(ifile,"%d %d %d %d", &key, &var, &low, &high) != 4)
-	 return bdd_error(BDD_FORMAT);
+      fgets(line, sizeof(line), ifile);
+      if(line[0] == '#')
+      {
+         n--;
+         continue;
+      }
+      if (sscanf(line,"%d[%d] %d %d", &key, &var, &low, &high) != 4)
+	      return bdd_error(BDD_FORMAT);
 
       if (low >= 2)
 	 low = loadhash_get(low);
