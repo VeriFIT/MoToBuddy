@@ -530,7 +530,7 @@ int bdd_load(FILE *ifile, BDD *root)
                   partsRead++;
                   token = strtok(NULL," ");
                   if(token == NULL)
-                     return bdd_err(BDD_FORMAT);
+                     return bdd_error(BDD_FORMAT);
                   strncpy(name, token, sizeof(name) - 1);
                   name[sizeof(name) - 1] = '\0';
                   continue;
@@ -540,11 +540,11 @@ int bdd_load(FILE *ifile, BDD *root)
                   partsRead++;
                   token = strtok(NULL," ");
                   if(token == NULL)
-                     return bdd_err(BDD_FORMAT);
+                     return bdd_error(BDD_FORMAT);
                   vnum  = strtol(token, &convCheck, 10);
                   if(*convCheck != '\0')
                   {
-                     return bdd_err(BDD_FORMAT);
+                     return bdd_error(BDD_FORMAT);
                   }
                   continue;
                }
@@ -553,11 +553,11 @@ int bdd_load(FILE *ifile, BDD *root)
                   partsRead++;
                   token = strtok(NULL," ");
                   if(token == NULL)
-                     return bdd_err(BDD_FORMAT);
+                     return bdd_error(BDD_FORMAT);
                   lh_nodenum  = strtol(token, &convCheck, 10);
                   if(*convCheck != '\0')
                   {
-                     return bdd_err(BDD_FORMAT);
+                     return bdd_error(BDD_FORMAT);
                   }
                   continue;
                }
@@ -566,11 +566,11 @@ int bdd_load(FILE *ifile, BDD *root)
                   partsRead++;
                   token = strtok(NULL," ");
                   if(token == NULL)
-                     return bdd_err(BDD_FORMAT);
+                     return bdd_error(BDD_FORMAT);
                   *root       = strtol(token, &convCheck, 10);
                   if(*convCheck != '\0')
                   {
-                     return bdd_err(BDD_FORMAT);
+                     return bdd_error(BDD_FORMAT);
                   }
                   continue;
                }
@@ -583,7 +583,7 @@ int bdd_load(FILE *ifile, BDD *root)
                   {
                      token = strtok(NULL, " ");
                      if(token == NULL)
-                        return bdd_err(BDD_FORMAT);
+                        return bdd_error(BDD_FORMAT);
                      loadvar2level[n] = strtol(token, &convCheck, 10);
                      if (*convCheck != '\0')
                         return bdd_error(BDD_FORMAT);
@@ -607,11 +607,11 @@ int bdd_load(FILE *ifile, BDD *root)
       if(partsRead==5)
          return 0;
       else
-         return bdd_err(BDD_FORMAT);
+         return bdd_error(BDD_FORMAT);
    }
 
    if(partsRead != 6)
-      return bdd_err(BDD_FORMAT);
+      return bdd_error(BDD_FORMAT);
 
    if (vnum > bddvarnum)
       bdd_setvarnum(vnum);
