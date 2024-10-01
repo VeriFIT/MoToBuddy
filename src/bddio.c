@@ -459,16 +459,21 @@ DESCR   {* Loads a BDD from a file into the BDD pointed to by {\tt r}.
 	   for reading or the file named {\tt fname} which will be opened
 	   automatically for reading.
 
-	   The input file format consists of integers arranged in the following
-	   manner. First the number of nodes $N$ used by the BDD and then the
-	   number of variables $V$ allocated and the variable ordering
-	   in use at the time the BDD was saved.
-	   If $N$ and $V$ are both zero then the BDD is either the constant
-	   true or false BDD, indicated by a $1$ or a $0$ as the next integer.
+      The input file consists of these mandatory parts:
 
-	   In any other case the next $N$ sets of $4$ integers will describe
-	   the nodes used by the BDD. Each set consists of first the node
-	   number, then the variable number and then the low and high nodes.
+      @TYPE                  (where TYPE represents type of the bdd representation, marks the start of representation)
+      %Name name
+      %Vars v                (where v is the number of variables)
+      %Nodes n               (where n is the number of nodes)
+      %Root r                (where r is the id number of the root (0/1 if constant))
+
+      %Ordering a0 a1 ... av (where a0...av are variable numbers in their ordering, this part is not mandatory if v=n=0 -> constant)     
+
+      Now the representation of each node follows:
+
+      id[var] low high       (where id is id number of the node, var is the variable number, low and high are ids of low and high children)
+
+      Representation can include comments which will be ignored, starting with # until the end of line.
 
 	   The nodes {\it must} be saved in a order such that any low or
 	   high node must be defined before it is mentioned. *}
@@ -496,7 +501,7 @@ int bdd_load(FILE *ifile, BDD *root)
    char name[20]   = "";
    char *token;
    bool started;
-   char *convCheck;
+   char *convCheck; // char that will be leftover after converting, can signal error
    int partsRead = 0;
 
    while(partsRead != 6)
@@ -529,9 +534,11 @@ int bdd_load(FILE *ifile, BDD *root)
                if(!strcmp(token, "%Name"))
                {
                   partsRead++;
+
                   token = strtok(NULL," ");
                   if(token == NULL)
                      return bdd_error(BDD_FORMAT);
+
                   strncpy(name, token, sizeof(name) - 1);
                   name[sizeof(name) - 1] = '\0';
                   continue;
@@ -539,9 +546,11 @@ int bdd_load(FILE *ifile, BDD *root)
                else if(!strcmp(token, "%Vars"))
                {
                   partsRead++;
+
                   token = strtok(NULL," ");
                   if(token == NULL)
                      return bdd_error(BDD_FORMAT);
+
                   vnum  = strtol(token, &convCheck, 10);
                   if(*convCheck != '\0' && *convCheck != '\n')
                   {
@@ -552,9 +561,11 @@ int bdd_load(FILE *ifile, BDD *root)
                else if(!strcmp(token, "%Nodes"))
                {
                   partsRead++;
+
                   token = strtok(NULL," ");
                   if(token == NULL)
                      return bdd_error(BDD_FORMAT);
+
                   lh_nodenum  = strtol(token, &convCheck, 10);
                   if(*convCheck != '\0' && *convCheck != '\n')
                   {
@@ -565,30 +576,36 @@ int bdd_load(FILE *ifile, BDD *root)
                else if(!strcmp(token, "%Root"))
                {
                   partsRead++;
+
                   token = strtok(NULL," ");
                   if(token == NULL)
                      return bdd_error(BDD_FORMAT);
+
                   *root       = strtol(token, &convCheck, 10);
                   if(*convCheck != '\0' && *convCheck != '\n')
                   {
                      return bdd_error(BDD_FORMAT);
                   }
-                  if(*root < 2)
+
+                  if(*root < 2) // check whether constant
                   {
-                    partsRead++;
+                    partsRead++; // +1 to account for missing ordering
                   }
                   continue;
                }
                else if(!strcmp(token, "%Ordering"))
                {
                   partsRead++;
+
                   if ((loadvar2level=(int*)malloc(sizeof(int)*vnum)) == NULL)
                      return bdd_error(BDD_MEMORY);
+
                   for (n=0 ; n<vnum ; n++) 
                   {
                      token = strtok(NULL, " ");
                      if(token == NULL)
                         return bdd_error(BDD_FORMAT);
+
                      loadvar2level[n] = strtol(token, &convCheck, 10);
                      if (*convCheck != '\0' && *convCheck != '\n')
                         return bdd_error(BDD_FORMAT);
@@ -612,7 +629,7 @@ int bdd_load(FILE *ifile, BDD *root)
    }
 
 
-   if (lh_nodenum==0  &&  vnum==0)
+   if (lh_nodenum==0  &&  vnum==0) // check whether constant
    {
          return 0;
    }
