@@ -573,6 +573,10 @@ int bdd_load(FILE *ifile, BDD *root)
                   {
                      return bdd_error(BDD_FORMAT);
                   }
+                  if(*root < 2)
+                  {
+                    partsRead++;
+                  }
                   continue;
                }
                else if(!strcmp(token, "%Ordering"))
