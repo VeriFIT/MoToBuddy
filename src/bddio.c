@@ -543,7 +543,7 @@ int bdd_load(FILE *ifile, BDD *root)
                   if(token == NULL)
                      return bdd_error(BDD_FORMAT);
                   vnum  = strtol(token, &convCheck, 10);
-                  if(*convCheck != '\0')
+                  if(*convCheck != '\0' && *convCheck != '\n')
                   {
                      return bdd_error(BDD_FORMAT);
                   }
@@ -556,20 +556,20 @@ int bdd_load(FILE *ifile, BDD *root)
                   if(token == NULL)
                      return bdd_error(BDD_FORMAT);
                   lh_nodenum  = strtol(token, &convCheck, 10);
-                  if(*convCheck != '\0')
+                  if(*convCheck != '\0' && *convCheck != '\n')
                   {
                      return bdd_error(BDD_FORMAT);
                   }
                   continue;
                }
-               else if(!strcmp(token, "%Root")) // possibly redundant info as the root will be returned
+               else if(!strcmp(token, "%Root"))
                {
                   partsRead++;
                   token = strtok(NULL," ");
                   if(token == NULL)
                      return bdd_error(BDD_FORMAT);
                   *root       = strtol(token, &convCheck, 10);
-                  if(*convCheck != '\0')
+                  if(*convCheck != '\0' && *convCheck != '\n')
                   {
                      return bdd_error(BDD_FORMAT);
                   }
@@ -586,7 +586,7 @@ int bdd_load(FILE *ifile, BDD *root)
                      if(token == NULL)
                         return bdd_error(BDD_FORMAT);
                      loadvar2level[n] = strtol(token, &convCheck, 10);
-                     if (*convCheck != '\0')
+                     if (*convCheck != '\0' && *convCheck != '\n')
                         return bdd_error(BDD_FORMAT);
                   }
                   continue;
