@@ -652,7 +652,10 @@ static int bdd_loaddata(FILE *ifile)
 
    for (n=0 ; n<lh_nodenum ; n++)
    {
-      fgets(line, sizeof(line), ifile);
+      if(fgets(line, sizeof(line), ifile) == NULL)
+      {
+          return bdd_error(BDD_FORMAT);
+      }
       if(line[0] == '#')
       {
          n--;
