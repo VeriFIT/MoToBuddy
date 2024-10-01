@@ -493,46 +493,123 @@ int bdd_load(FILE *ifile, BDD *root)
 {
    int n, vnum, tmproot, type;
    char line[1000] = "";
+   char name[20]   = "";
    char *token;
-   bool started = false;
+   bool started, doneReading = false;
+   char *convCheck;
+   int partsRead = 0;
 
-
-   while(!started)
+   while(fgets(line, sizeof(line), ifile) || !doneReading)
    {
-      fgets(line, sizeof(line), ifile);
       if(line[0] == '@')
       {
+         partsRead++;
          started = true;
          token = strtok(line, " ");
          if(!strcmp(token, "@BDD"))
          {
             type = 1; // add enum/define of types
+            continue;
          }
          else
          {
             type = 0; // unknown
+            continue;
+         }
+      }
+      if(started)
+      {
+         switch(line[0])
+         {
+            case '#':   // skip comment
+               continue;
+            case '%':
+               token = strtok(line," ");
+               if(!strcmp(token, "%%Name"))
+               {
+                  partsRead++;
+                  token = strtok(NULL," ");
+                  if(token == NULL)
+                     return BDD_FORMAT;
+                  strncpy(name, token, sizeof(name) - 1);
+                  name[sizeof(name) - 1] = '\0';
+                  continue;
+               }
+               else if(!strcmp(token, "%%Vars"))
+               {
+                  partsRead++;
+                  token = strtok(NULL," ");
+                  if(token == NULL)
+                     return BDD_FORMAT;
+                  vnum  = strtol(token, &convCheck, 10);
+                  if(*convCheck != '\0')
+                  {
+                     return BDD_FORMAT;
+                  }
+                  continue;
+               }
+               else if(!strcmp(token, "%%Nodes"))
+               {
+                  partsRead++;
+                  token = strtok(NULL," ");
+                  if(token == NULL)
+                     return BDD_FORMAT;
+                  lh_nodenum  = strtol(token, &convCheck, 10);
+                  if(*convCheck != '\0')
+                  {
+                     return BDD_FORMAT;
+                  }
+                  continue;
+               }
+               else if(!strcmp(token, "%%Root")) // possibly redundant info as the root will be returned
+               {
+                  partsRead++;
+                  token = strtok(NULL," ");
+                  if(token == NULL)
+                     return BDD_FORMAT;
+                  *root       = strtol(token, &convCheck, 10);
+                  if(*convCheck != '\0')
+                  {
+                     return BDD_FORMAT;
+                  }
+                  continue;
+               }
+               else if(!strcmp(token, "%%Ordering"))
+               {
+                  partsRead++;
+                  if ((loadvar2level=(int*)malloc(sizeof(int)*vnum)) == NULL)
+                     return bdd_error(BDD_MEMORY);
+                  for (n=0 ; n<vnum ; n++) 
+                  {
+                     token = strtok(NULL, " ");
+                     if(token == NULL)
+                        return BDD_FORMAT;
+                     loadvar2level[n] = strtol(token, convCheck, 10);
+                     if (*convCheck != '\0')
+                        return bdd_error(BDD_FORMAT);
+                  }
+                  continue;
+               }
+               else
+               {
+                  return bdd_error(BDD_FORMAT);
+               }
+               break;
+            default:
+               doneReading = true;
+               break;
          }
       }
    }
 
-   if (fscanf(ifile, "%d %d", &lh_nodenum, &vnum) != 2)
-      return bdd_error(BDD_FORMAT);
-
-      /* Check for constant true / false */
-   if (lh_nodenum==0  &&  vnum==0)
+   if (lh_nodenum==0  &&  vnum==0 && partsRead==5)
    {
-      if (fscanf(ifile, "%d", root) != 1)
-         return bdd_error(BDD_FORMAT);
       return 0;
    }
 
-   if ((loadvar2level=(int*)malloc(sizeof(int)*vnum)) == NULL)
-      return bdd_error(BDD_MEMORY);
-   for (n=0 ; n<vnum ; n++) {
-      if (fscanf(ifile, "%d", &loadvar2level[n]) != 1)
-         return bdd_error(BDD_FORMAT);
-   }
-
+   if(partsRead != 6)
+      return BDD_FORMAT;
+      
    if (vnum > bddvarnum)
       bdd_setvarnum(vnum);
 
