@@ -495,12 +495,13 @@ int bdd_load(FILE *ifile, BDD *root)
    char line[1000] = "";
    char name[20]   = "";
    char *token;
-   bool started, doneReading = false;
+   bool started;
    char *convCheck;
    int partsRead = 0;
 
-   while(fgets(line, sizeof(line), ifile) || !doneReading)
+   while(partsRead != 6)
    {
+      fgets(line, sizeof(line), ifile);
       if(line[0] == '@')
       {
          partsRead++;
@@ -596,22 +597,21 @@ int bdd_load(FILE *ifile, BDD *root)
                }
                break;
             default:
-               doneReading = true;
                break;
          }
       }
    }
 
-   if (lh_nodenum==0  &&  vnum==0)
+   if(partsRead != 6)
    {
-      if(partsRead==5)
-         return 0;
-      else
-         return bdd_error(BDD_FORMAT);
+      return bdd_error(BDD_FORMAT);
    }
 
-   if(partsRead != 6)
-      return bdd_error(BDD_FORMAT);
+
+   if (lh_nodenum==0  &&  vnum==0)
+   {
+         return 0;
+   }
 
    if (vnum > bddvarnum)
       bdd_setvarnum(vnum);
