@@ -496,9 +496,9 @@ int bdd_fnload(char *fname, BDD *root)
 
 int bdd_load(FILE *ifile, BDD *root)
 {
-   int n, vnum, tmproot, type;
+   int n, vnum, tmproot, type; // TODO store type somewhere better
    char line[1000] = "";
-   char name[20]   = "";
+   char name[20]   = ""; // TODO store somewhere better
    char *token;
    bool started;
    char *convCheck; // char that will be leftover after converting, can signal error
@@ -514,7 +514,7 @@ int bdd_load(FILE *ifile, BDD *root)
          token = strtok(line, " ");
          if(!strcmp(token, "@BDD"))
          {
-            type = 1; // add enum/define of types
+            type = 1; // TODO add enum/define of types
             continue;
          }
          else
