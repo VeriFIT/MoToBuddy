@@ -526,7 +526,7 @@ int bdd_load(FILE *ifile, BDD *root)
                continue;
             case '%':
                token = strtok(line," ");
-               if(!strcmp(token, "%%Name"))
+               if(!strcmp(token, "%Name"))
                {
                   partsRead++;
                   token = strtok(NULL," ");
@@ -536,7 +536,7 @@ int bdd_load(FILE *ifile, BDD *root)
                   name[sizeof(name) - 1] = '\0';
                   continue;
                }
-               else if(!strcmp(token, "%%Vars"))
+               else if(!strcmp(token, "%Vars"))
                {
                   partsRead++;
                   token = strtok(NULL," ");
@@ -549,7 +549,7 @@ int bdd_load(FILE *ifile, BDD *root)
                   }
                   continue;
                }
-               else if(!strcmp(token, "%%Nodes"))
+               else if(!strcmp(token, "%Nodes"))
                {
                   partsRead++;
                   token = strtok(NULL," ");
@@ -562,7 +562,7 @@ int bdd_load(FILE *ifile, BDD *root)
                   }
                   continue;
                }
-               else if(!strcmp(token, "%%Root")) // possibly redundant info as the root will be returned
+               else if(!strcmp(token, "%Root")) // possibly redundant info as the root will be returned
                {
                   partsRead++;
                   token = strtok(NULL," ");
@@ -575,7 +575,7 @@ int bdd_load(FILE *ifile, BDD *root)
                   }
                   continue;
                }
-               else if(!strcmp(token, "%%Ordering"))
+               else if(!strcmp(token, "%Ordering"))
                {
                   partsRead++;
                   if ((loadvar2level=(int*)malloc(sizeof(int)*vnum)) == NULL)
