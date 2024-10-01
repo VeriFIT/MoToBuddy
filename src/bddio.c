@@ -41,6 +41,8 @@
 #include <sys/stat.h>
 #include "bdd.h"
 #include "kernel.h"
+#include <stdbool.h>
+
 
 static void bdd_printset_rec(FILE *, int, int *);
 static void bdd_fprintdot_rec(FILE*, BDD);
@@ -436,10 +438,8 @@ static int bdd_save_rec(FILE *ofile, int root)
    if ((err=bdd_save_rec(ofile, HIGHp(node))) < 0)
       return err;
 
-   fprintf(ofile, "%d[%d] ",
-	   root, bddlevel2var[LEVELp(node) & MARKHIDE]);
-   fprintf(ofile, "%d ", LOWp(node));
-   fprintf(ofile, "%d\n", HIGHp(node));
+   fprintf(ofile, "%d[%d] %d %d\n",
+	   root, bddlevel2var[LEVELp(node) & MARKHIDE], LOWp(node), HIGHp(node));
 
    return 0;
 }
@@ -491,7 +491,29 @@ int bdd_fnload(char *fname, BDD *root)
 
 int bdd_load(FILE *ifile, BDD *root)
 {
-   int n, vnum, tmproot;
+   int n, vnum, tmproot, type;
+   char line[1000] = "";
+   char *token;
+   bool started = false;
+
+
+   while(!started)
+   {
+      fgets(line, sizeof(line), ifile);
+      if(line[0] == '@')
+      {
+         started = true;
+         token = strtok(line, " ");
+         if(!strcmp(token, "@BDD"))
+         {
+            type = 1; // add enum/define of types
+         }
+         else
+         {
+            type = 0; // unknown
+         }
+      }
+   }
 
    if (fscanf(ifile, "%d %d", &lh_nodenum, &vnum) != 2)
       return bdd_error(BDD_FORMAT);
