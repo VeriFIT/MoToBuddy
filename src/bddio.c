@@ -50,8 +50,7 @@ static int  bdd_save_rec(FILE*, int);
 static int  bdd_loaddata(FILE *);
 static int  loadhash_get(int);
 static void loadhash_add(int, int);
-static void loadhash_realloc();
-
+static int loadhash_realloc();
 static bddfilehandler filehandler;
 
 typedef struct s_LoadHash
@@ -634,7 +633,7 @@ int bdd_load(FILE *ifile, BDD *root)
    }
 
 
-   if (lh_nodenum==0  &&  vnum==0) // check whether constant
+   if (*root == 0 || *root == 1) // check whether constant
    {
          return 0;
    }
@@ -660,7 +659,6 @@ int bdd_load(FILE *ifile, BDD *root)
 
    free(lh_table);
    free(loadvar2level);
-
    *root = 0;
    if (tmproot < 0)
       return tmproot;
@@ -676,12 +674,8 @@ static int bdd_loaddata(FILE *ifile)
    int key,var,low,high,root=0,n;
    char line[1000] = "";
 
-   for (n=0 ; n<lh_nodenum ; n++)
+   while (fgets(line, sizeof(line), ifile) != NULL)
    {
-      if(fgets(line, sizeof(line), ifile) == NULL)
-      {
-          return bdd_error(BDD_FORMAT);
-      }
       if(line[0] == '#')
       {
          n--;
@@ -695,12 +689,14 @@ static int bdd_loaddata(FILE *ifile)
       if (high >= 2)
 	 high = loadhash_get(high);
 
-      if (low<0 || high<0 || var<0)
-	 return bdd_error(BDD_FORMAT);
+      if ( var<0 || low<0 || high<0)
+         return bdd_error(BDD_FORMAT);
+      else
+      {
+         root = bdd_addref( bdd_ite(bdd_ithvar(var), high, low) );
 
-      root = bdd_addref( bdd_ite(bdd_ithvar(var), high, low) );
-
-      loadhash_add(key, root);
+         loadhash_add(key, root);
+      }
    }
 
    return root;
@@ -709,6 +705,11 @@ static int bdd_loaddata(FILE *ifile)
 
 static void loadhash_add(int key, int data)
 {
+   if(lh_count >= lh_nodenum*LH_REALLOC_FACTOR)
+   {
+      loadhash_realloc();
+   }
+
    int hash = key % lh_nodenum;
    int pos = lh_freepos;
 
@@ -718,6 +719,7 @@ static void loadhash_add(int key, int data)
 
    lh_table[pos].key = key;
    lh_table[pos].data = data;
+   lh_count++;
 }
 
 
@@ -734,7 +736,7 @@ static int loadhash_get(int key)
 }
 
 
-static void loadhash_realloc()
+static int loadhash_realloc()
 {
    int oldSize        = lh_nodenum;
    LoadHash *oldTable = lh_table;
@@ -760,6 +762,8 @@ static void loadhash_realloc()
       }
    }
 
+   free(oldTable);
+   return 0;
 }
 
 /* EOF */
