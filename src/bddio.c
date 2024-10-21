@@ -80,8 +80,8 @@ static int       lh_nodenum = LH_INIT_VALUE;    // current size of the hashtable
 static int       lh_count   = 0; // current number of nodes in hashtable
 static int      *loadvar2level;
 static unresolved_node *un_nodes = NULL;
-static unresolved = 0;
-static unresolved_size = LH_INIT_VALUE;
+static int       unresolved = 0;
+static int       unresolved_size = LH_INIT_VALUE;
 
 /*=== PRINTING ========================================================*/
 
