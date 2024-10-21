@@ -668,6 +668,79 @@ int bdd_load(FILE *ifile, BDD *root)
    return 0;
 }
 
+typedef struct unresolved_node{
+   int key;
+   int high;
+   int low;
+   int var;
+}unresolved_node;
+
+unresolved_node *un_nodes = NULL;
+int unresolved = 0;
+int unresolved_size = LH_INIT_VALUE;
+
+static int unresolved_realloc()
+{
+   if(un_nodes == NULL)
+   {
+      un_nodes = malloc(unresolved_size*sizeof(unresolved_node));
+      if(un_nodes == NULL)
+         return bdd_error(BDD_MEMORY);
+      return 0;
+   }
+
+   if(unresolved < unresolved_size*LH_REALLOC_FACTOR)
+   {
+      return 0;
+   }
+
+   unresolved_size = unresolved_size*2;
+   unresolved_node *newTable = (unresolved_node*)realloc(un_nodes, unresolved_size*sizeof(unresolved_node));
+   if (newTable == NULL)
+      return bdd_error(BDD_MEMORY);
+   un_nodes = newTable;
+   
+   return 0;
+}
+
+void add_unresolved(int key, int var, int high, int low)
+{
+   unresolved_realloc();
+   unresolved_node toadd = {.high = high, .low = low, .key = key, .var = var};
+   un_nodes[unresolved] = toadd;
+   unresolved++;
+   return;
+}
+
+void resolve_nodes(int *root)
+{
+   for(int i = 0; i<unresolved; i++)
+   {
+      unresolved_node toresolve = un_nodes[i];
+      int lowH  = toresolve.low;
+      int highH = toresolve.high;
+      if (toresolve.low >= 2)
+	      lowH = loadhash_get(toresolve.low);
+      if (toresolve.high >= 2)
+	      highH = loadhash_get(toresolve.high);
+
+      if ( highH<0 || lowH<0 ){continue;} // check if it is possible to resolve
+      else 
+      {
+         *root = bdd_addref( bdd_ite(bdd_ithvar(toresolve.var), highH, lowH) );
+
+         loadhash_add(toresolve.key, *root);
+
+         if(i == unresolved-1){unresolved--;} // if we processed last element, just decrement the num of unresolved
+         else
+         {
+            un_nodes[i] = un_nodes[unresolved--]; // else, put last element to the place of processed
+            i--; // decrement i to include the moved element         
+         }
+
+      }
+   }
+}
 
 static int bdd_loaddata(FILE *ifile)
 {
@@ -683,21 +756,36 @@ static int bdd_loaddata(FILE *ifile)
       }
       if (sscanf(line,"%d[%d] %d %d", &key, &var, &low, &high) != 4)
 	      return bdd_error(BDD_FORMAT);
-
+   int lowH  = low;
+   int highH = high;
       if (low >= 2)
-	 low = loadhash_get(low);
+	 lowH = loadhash_get(low);
       if (high >= 2)
-	 high = loadhash_get(high);
+	 highH = loadhash_get(high);
 
-      if ( var<0 || low<0 || high<0)
+      if ( var<0 )
          return bdd_error(BDD_FORMAT);
+      if ( highH<0 || lowH<0 )
+      {
+         add_unresolved(key, var, high, low);
+         printf("WARNING: Node %d has references to previously undefined nodes. Resolving. Performance will be heavily impacted.\n", key);
+      }
       else
       {
-         root = bdd_addref( bdd_ite(bdd_ithvar(var), high, low) );
+         root = bdd_addref( bdd_ite(bdd_ithvar(var), highH, lowH) );
 
          loadhash_add(key, root);
+
+         resolve_nodes(&root);
       }
    }
+
+   for(int i = 0; i<unresolved; i++)
+   {
+      resolve_nodes(&root);
+   }
+
+   if(unresolved != 0){return bdd_error(BDD_FORMAT);}
 
    return root;
 }
@@ -765,5 +853,7 @@ static int loadhash_realloc()
    free(oldTable);
    return 0;
 }
+
+
 
 /* EOF */
