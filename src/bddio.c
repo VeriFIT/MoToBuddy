@@ -50,7 +50,10 @@ static int  bdd_save_rec(FILE*, int);
 static int  bdd_loaddata(FILE *);
 static int  loadhash_get(int);
 static void loadhash_add(int, int);
-static int loadhash_realloc();
+static int  loadhash_realloc();
+static int  unresolved_realloc();
+static void add_unresolved(int, int, int, int);
+static void resolve_nodes(int *);
 static bddfilehandler filehandler;
 
 typedef struct s_LoadHash
@@ -61,6 +64,13 @@ typedef struct s_LoadHash
    int next;
 } LoadHash;
 
+typedef struct unresolved_node{
+   int key;
+   int high;
+   int low;
+   int var;
+}unresolved_node;
+
 #define LH_INIT_VALUE        10    // initial size of the hash table
 #define LH_REALLOC_FACTOR  0.75
 
@@ -69,6 +79,9 @@ static int       lh_freepos;
 static int       lh_nodenum = LH_INIT_VALUE;    // current size of the hashtable (if not specified, LH_INIT_VALUE)
 static int       lh_count   = 0; // current number of nodes in hashtable
 static int      *loadvar2level;
+static unresolved_node *un_nodes = NULL;
+static unresolved = 0;
+static unresolved_size = LH_INIT_VALUE;
 
 /*=== PRINTING ========================================================*/
 
@@ -668,17 +681,6 @@ int bdd_load(FILE *ifile, BDD *root)
    return 0;
 }
 
-typedef struct unresolved_node{
-   int key;
-   int high;
-   int low;
-   int var;
-}unresolved_node;
-
-unresolved_node *un_nodes = NULL;
-int unresolved = 0;
-int unresolved_size = LH_INIT_VALUE;
-
 static int unresolved_realloc()
 {
    if(un_nodes == NULL)
@@ -703,7 +705,7 @@ static int unresolved_realloc()
    return 0;
 }
 
-void add_unresolved(int key, int var, int high, int low)
+static void add_unresolved(int key, int var, int high, int low)
 {
    unresolved_realloc();
    unresolved_node toadd = {.high = high, .low = low, .key = key, .var = var};
@@ -712,7 +714,7 @@ void add_unresolved(int key, int var, int high, int low)
    return;
 }
 
-void resolve_nodes(int *root)
+static void resolve_nodes(int *root)
 {
    for(int i = 0; i<unresolved; i++)
    {
