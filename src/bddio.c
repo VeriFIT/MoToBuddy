@@ -71,17 +71,19 @@ typedef struct unresolved_node{
    int var;
 }unresolved_node;
 
-#define LH_INIT_VALUE        10    // initial size of the hash table
-#define LH_REALLOC_FACTOR  0.75
+#define LH_INIT_VALUE           10    // initial size of the hash table
+#define LH_INIT_REALLOC_FACTOR  0.75
 
+static bool nameR,typeR,varsR,nodesR,rootR,orderR = false; 
 static LoadHash *lh_table;
 static int       lh_freepos;
-static int       lh_nodenum = LH_INIT_VALUE;    // current size of the hashtable (if not specified, LH_INIT_VALUE)
-static int       lh_count   = 0; // current number of nodes in hashtable
+static int       lh_nodenum        = LH_INIT_VALUE;    // current size of the hashtable (if not specified, LH_INIT_VALUE)
+static float     lh_realloc_factor = LH_INIT_REALLOC_FACTOR; // if nodenum is known,changes to 1 (realloc propably won't be necessary)
+static int       lh_count          = 0; // current number of nodes in hashtable
 static int      *loadvar2level;
-static unresolved_node *un_nodes = NULL;
-static int       unresolved = 0;
-static int       unresolved_size = LH_INIT_VALUE;
+static unresolved_node *un_nodes   = NULL;
+static int       unresolved        = 0;
+static int       unresolved_size   = LH_INIT_VALUE;
 
 /*=== PRINTING ========================================================*/
 
@@ -519,15 +521,13 @@ int bdd_load(FILE *ifile, BDD *root)
    char *token;
    bool started;
    char *convCheck; // char that will be leftover after converting, can signal error
-   int partsRead = 0;
-
-   while(partsRead != 6)
+   while(!orderR)
    {
       fgets(line, sizeof(line), ifile);
       if(line[0] == '@')
       {
-         partsRead++;
          started = true;
+         typeR   = true;
          token = strtok(line, " ");
          if(!strcmp(token, "@BDD"))
          {
@@ -550,7 +550,7 @@ int bdd_load(FILE *ifile, BDD *root)
                token = strtok(line," ");
                if(!strcmp(token, "%Name"))
                {
-                  partsRead++;
+                  nameR = true;
 
                   token = strtok(NULL," ");
                   if(token == NULL)
@@ -562,7 +562,7 @@ int bdd_load(FILE *ifile, BDD *root)
                }
                else if(!strcmp(token, "%Vars"))
                {
-                  partsRead++;
+                  varsR = true;
 
                   token = strtok(NULL," ");
                   if(token == NULL)
@@ -577,7 +577,7 @@ int bdd_load(FILE *ifile, BDD *root)
                }
                else if(!strcmp(token, "%Nodes"))
                {
-                  partsRead++;
+                  nodesR = true;
 
                   token = strtok(NULL," ");
                   if(token == NULL)
@@ -592,7 +592,7 @@ int bdd_load(FILE *ifile, BDD *root)
                }
                else if(!strcmp(token, "%Root"))
                {
-                  partsRead++;
+                  rootR = true;
 
                   token = strtok(NULL," ");
                   if(token == NULL)
@@ -606,13 +606,13 @@ int bdd_load(FILE *ifile, BDD *root)
 
                   if(*root < 2) // check whether constant
                   {
-                    partsRead++; // +1 to account for missing ordering
+                    orderR; // to account for missing ordering
                   }
                   continue;
                }
                else if(!strcmp(token, "%Ordering"))
                {
-                  partsRead++;
+                  orderR = true;
 
                   if ((loadvar2level=(int*)malloc(sizeof(int)*vnum)) == NULL)
                      return bdd_error(BDD_MEMORY);
@@ -640,7 +640,8 @@ int bdd_load(FILE *ifile, BDD *root)
       }
    }
 
-   if(partsRead != 6)
+   bool allRead = typeR && nameR && rootR && varsR && orderR; // node number is not necessary
+   if(!allRead)
    {
       return bdd_error(BDD_FORMAT);
    }
@@ -691,7 +692,7 @@ static int unresolved_realloc()
       return 0;
    }
 
-   if(unresolved < unresolved_size*LH_REALLOC_FACTOR)
+   if(unresolved < unresolved_size*lh_realloc_factor)
    {
       return 0;
    }
@@ -795,7 +796,7 @@ static int bdd_loaddata(FILE *ifile)
 
 static void loadhash_add(int key, int data)
 {
-   if(lh_count >= lh_nodenum*LH_REALLOC_FACTOR)
+   if(lh_count >= lh_nodenum*LH_INIT_REALLOC_FACTOR)
    {
       loadhash_realloc();
    }
