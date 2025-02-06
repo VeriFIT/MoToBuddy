@@ -78,15 +78,36 @@
 
 typedef struct s_BddNode /* Node table entry */
 {
+union{
+      struct{
+            int high; // 32 bit
+            int low; // 32 bit
+      }; // for non-terminal nodes
+      
+      struct{
+         union{
+               char     charVal;
+               unsigned unsignedVal;
+               int      intVal; 
+               float    floatVal;
+         };
+      }; // for terminal nodes with values in them
+
+      struct{
+         unsigned index;
+         unsigned type;
+      }; // for terminal nodes with values in external table
+
+
+   };
+   
    unsigned int refcou : 10;
    unsigned int level  : 21;
-   unsigned int mark   :  1;
-   int low;
-   int high;
+   unsigned int mark   : 1;
+
    int hash;
    int next;
 } BddNode;
-
 
 /*=== KERNEL VARIABLES =================================================*/
 
@@ -119,6 +140,7 @@ extern bddCacheStat bddcachestats;
 
 #define MAXVAR 0x1FFFFF
 #define MAXREF 0x3FF
+#define MAXLEVEL 0x1FFFFF
 
    /* Reference counting */
 #define DECREF(n) if (bddnodes[n].refcou!=MAXREF && bddnodes[n].refcou>0) bddnodes[n].refcou--
