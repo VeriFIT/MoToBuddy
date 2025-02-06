@@ -49,6 +49,7 @@
 #include "kernel.h"
 #include "cache.h"
 #include "prime.h"
+#include "mtbdd.h"
 
 /*************************************************************************
   Various definitions and global variables
@@ -271,6 +272,8 @@ void bdd_done(void)
    bddrunning = 0;
    bddnodesize = 0;
    bddmaxnodesize = 0;
+   mtbddTerminalUsed = 0;
+   mtbddmaxTerminalSize = 0;
    bddvarnum = 0;
    bddproduced = 0;
    
@@ -1068,12 +1071,16 @@ void bdd_gbc(void)
 	 register unsigned int hash;
 
 	 UNMARKp(node);
-	 hash = NODEHASH(LEVELp(node), LOWp(node), HIGHp(node));
+	if(LEVELp(node) == MAXLEVEL && DOMAIN_NOT_SHORT){
+      hash = mtbdd_terminal_hash_gbc(mtbdd_getvaluep(node));
+    } // when value in the table
+	 else{hash = NODEHASH(LEVELp(node), LOWp(node), HIGHp(node));}
 	 node->next = bddnodes[hash].hash;
 	 bddnodes[hash].hash = n;
       }
       else
       {
+    if(LEVELp(node) == MAXLEVEL){mtbdd_delete_terminal(node);}
 	 LOWp(node) = -1;
 	 node->next = bddfreepos;
 	 bddfreepos = n;
@@ -1168,7 +1175,7 @@ void bdd_mark(int i)
    if (MARKEDp(node)  ||  LOWp(node) == -1)
       return;
    
-   MARKp(node);
+   SETMARKp(node);
    bdd_mark(LOWp(node));
    bdd_mark(HIGHp(node));
 }
@@ -1264,13 +1271,14 @@ int bdd_makenode(unsigned int level, int low, int high)
 #ifdef CACHESTATS
    bddcachestats.uniqueAccess++;
 #endif
-   
-      /* check whether childs are equal */
-   if (low == high)
-      return low;
-
-      /* Try to find an existing node of this kind */
    hash = NODEHASH(level, low, high);
+
+   if(level != MAXLEVEL || !DOMAIN_NOT_SHORT){
+      /* check whether childs are equal */
+      if (level != MAXLEVEL && low == high){
+         return low;
+      }
+      /* Try to find an existing non-terminal node of this kind */
    res = bddnodes[hash].hash;
 
    while(res != 0)
@@ -1288,7 +1296,8 @@ int bdd_makenode(unsigned int level, int low, int high)
       bddcachestats.uniqueChain++;
 #endif
    }
-   
+   }/* if(level != MAXLEVEL) */
+
       /* No existing node -> build one */
 #ifdef CACHESTATS
    bddcachestats.uniqueMiss++;
@@ -1334,6 +1343,7 @@ int bdd_makenode(unsigned int level, int low, int high)
    LEVELp(node) = level;
    LOWp(node) = low;
    HIGHp(node) = high;
+   node->mark = 0;
    
       /* Insert node */
    node->next = bddnodes[hash].hash;
