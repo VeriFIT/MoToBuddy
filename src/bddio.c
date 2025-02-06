@@ -71,10 +71,14 @@ typedef struct unresolved_node{
    int var;
 }unresolved_node;
 
-#define LH_INIT_VALUE           10    // initial size of the hash table
+typedef enum{
+   BDD_TYPE_UNKNOWN = 0,
+   BDD_TYPE_BDD = 1
+} BDDType;
+
+#define LH_INIT_VALUE           1000    // initial size of the hash table
 #define LH_INIT_REALLOC_FACTOR  0.75
 
-static bool nameR,typeR,varsR,nodesR,rootR,orderR = false; 
 static LoadHash *lh_table;
 static int       lh_freepos;
 static int       lh_nodenum        = LH_INIT_VALUE;    // current size of the hashtable (if not specified, LH_INIT_VALUE)
@@ -410,7 +414,6 @@ int bdd_fnsave(char *fname, BDD r, char *bddname, char *bddtype)
    fprintf(ofile, "@%s\n%%Name %s\n", bddtype, bddname);
    ok = bdd_save(ofile, r);
    fclose(ofile);
-   nameR,typeR,varsR,nodesR,rootR,orderR = false; 
    return ok;
 }
 
@@ -513,18 +516,30 @@ int bdd_fnload(char *fname, BDD *root)
    return ok;
 }
 
+int parseInt(char *token) {
+    char *endptr;
+    int value = strtol(token, &endptr, 10);
+    return (*endptr != '\0' && *endptr != '\n') ? -1 : value;
+}
 
 int bdd_load(FILE *ifile, BDD *root)
 {
+   bool nameR,typeR,varsR,nodesR,rootR,orderR = false; 
    int n, vnum, tmproot, type; // TODO store type somewhere better
-   char line[1000] = "";
+   char *line = NULL;
+   size_t lineSize = 0;
+
    char name[20]   = ""; // TODO store somewhere better
    char *token;
-   bool started;
+   bool started = false;
    char *convCheck; // char that will be leftover after converting, can signal error
    while(!orderR)
    {
-      fgets(line, sizeof(line), ifile);
+      if(getline(&line, &lineSize, ifile) == -1){
+            free(line);
+            return bdd_error(BDD_FORMAT);
+      }
+
       if(line[0] == '@')
       {
          started = true;
@@ -541,106 +556,98 @@ int bdd_load(FILE *ifile, BDD *root)
             continue;
          }
       }
-      if(started)
+      if(!started){continue;}
+      
+      switch(line[0])
       {
-         switch(line[0])
-         {
-            case '#':   // skip comment
-               continue;
-            case '%':
-               token = strtok(line," ");
-               if(!strcmp(token, "%Name"))
-               {
-                  nameR = true;
+         case '#':   // skip comment
+            continue;
 
-                  token = strtok(NULL," ");
-                  if(token == NULL)
-                     return bdd_error(BDD_FORMAT);
+         case '%':
+            token = strtok(line," ");
+            if(!strcmp(token, "%Name"))
+            {
+               nameR = true;
 
-                  strncpy(name, token, sizeof(name) - 1);
-                  name[sizeof(name) - 1] = '\0';
-                  continue;
-               }
-               else if(!strcmp(token, "%Vars"))
-               {
-                  varsR = true;
-
-                  token = strtok(NULL," ");
-                  if(token == NULL)
-                     return bdd_error(BDD_FORMAT);
-
-                  vnum  = strtol(token, &convCheck, 10);
-                  if(*convCheck != '\0' && *convCheck != '\n')
-                  {
-                     return bdd_error(BDD_FORMAT);
-                  }
-                  continue;
-               }
-               else if(!strcmp(token, "%Nodes"))
-               {
-                  nodesR = true;
-
-                  token = strtok(NULL," ");
-                  if(token == NULL)
-                     return bdd_error(BDD_FORMAT);
-
-                  lh_nodenum  = strtol(token, &convCheck, 10);
-                  if(*convCheck != '\0' && *convCheck != '\n')
-                  {
-                     return bdd_error(BDD_FORMAT);
-                  }
-                  continue;
-               }
-               else if(!strcmp(token, "%Root"))
-               {
-                  rootR = true;
-
-                  token = strtok(NULL," ");
-                  if(token == NULL)
-                     return bdd_error(BDD_FORMAT);
-
-                  *root       = strtol(token, &convCheck, 10);
-                  if(*convCheck != '\0' && *convCheck != '\n')
-                  {
-                     return bdd_error(BDD_FORMAT);
-                  }
-
-                  if(*root < 2) // check whether constant
-                  {
-                    orderR = true; // to account for missing ordering
-                  }
-                  continue;
-               }
-               else if(!strcmp(token, "%Ordering"))
-               {
-                  orderR = true;
-
-                  if ((loadvar2level=(int*)malloc(sizeof(int)*vnum)) == NULL)
-                     return bdd_error(BDD_MEMORY);
-
-                  for (n=0 ; n<vnum ; n++) 
-                  {
-                     token = strtok(NULL, " ");
-                     if(token == NULL)
-                        return bdd_error(BDD_FORMAT);
-
-                     loadvar2level[n] = strtol(token, &convCheck, 10);
-                     if (*convCheck != '\0' && *convCheck != '\n')
-                        return bdd_error(BDD_FORMAT);
-                  }
-                  continue;
-               }
-               else
-               {
+               token = strtok(NULL," ");
+               if(token == NULL){
+                  free(line);
                   return bdd_error(BDD_FORMAT);
                }
-               break;
-            default:
-               break;
-         }
+
+               strncpy(name, token, sizeof(name) - 1);
+               name[sizeof(name) - 1] = '\0';
+               continue;
+            }
+            else if(!strcmp(token, "%Vars"))
+            {
+               varsR = true;
+
+               token = strtok(NULL," ");
+               if(token == NULL || (vnum = parseInt(token)) < 0){
+                  free(line);
+                  return bdd_error(BDD_FORMAT);
+               }
+
+               continue;
+            }
+            else if(!strcmp(token, "%Nodes"))
+            {
+               nodesR = true;
+
+               token = strtok(NULL," ");
+               if(token == NULL || (lh_nodenum = parseInt(token)) < 0){
+                  free(line);
+                  return bdd_error(BDD_FORMAT);
+               }
+               continue;
+            }
+            else if(!strcmp(token, "%Root"))
+            {
+               rootR = true;
+
+               token = strtok(NULL," ");
+               if(!token || (*root = parseInt(token)) < 0){
+                        free(line);
+                        return bdd_error(BDD_FORMAT);
+               }
+
+               if(*root < 2) // check whether constant
+               {
+                  orderR = true; // to account for missing ordering
+               }
+               continue;
+            }
+            else if(!strcmp(token, "%Ordering"))
+            {
+               orderR = true;
+
+               if ((loadvar2level=(int*)malloc(sizeof(int)*vnum)) == NULL){
+                  free(line);
+                  return bdd_error(BDD_MEMORY);
+               }
+               for (n=0 ; n<vnum ; n++) 
+               {
+                  token = strtok(NULL, " ");
+                  if(token == NULL || (loadvar2level[n] = parseInt(token)) < 0){
+                     free(line);
+                     return bdd_error(BDD_FORMAT);
+                  }
+               }
+               continue;
+            }
+            else
+            {  
+               free(line);
+               return bdd_error(BDD_FORMAT);
+            }
+            break;
+         default:
+            break;
       }
    }
 
+   free(line);
    bool allRead = typeR && nameR && rootR && varsR && orderR; // node number is not necessary
    if(!allRead)
    {
@@ -749,14 +756,15 @@ static void resolve_nodes(int *root)
 
 static int bdd_loaddata(FILE *ifile)
 {
-   int key,var,low,high,root=0,n;
-   char line[1000] = "";
+   int key,var,low,high,root=0;
+   char *line = NULL;
+   size_t lineSize = 0;
+   bool warningPrinted = false;
 
-   while (fgets(line, sizeof(line), ifile) != NULL)
+   while (getline(&line, &lineSize, ifile) != -1)
    {
       if(line[0] == '#')
       {
-         n--;
          continue;
       }
       if (sscanf(line,"%d[%d] %d %d", &key, &var, &low, &high) != 4)
@@ -773,7 +781,10 @@ static int bdd_loaddata(FILE *ifile)
       if ( highH<0 || lowH<0 )
       {
          add_unresolved(key, var, high, low);
-         fprintf(stderr,"WARNING: Node %d has references to previously undefined nodes. Resolving. Performance will be heavily impacted.\n", key);
+         if(!warningPrinted){
+            warningPrinted = true;
+            fprintf(stderr,"WARNING: Node %d has references to previously undefined nodes. Resolving. Performance will be heavily impacted.\n", key);
+         }
       }
       else
       {
