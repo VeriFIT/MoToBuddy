@@ -299,7 +299,7 @@ int bdd_setvarnum(int num)
 
    bdd_disable_reorder();
       
-   if (num < 1  ||  num > MAXVAR)
+   if (num < 1  ||  num >= MAXVAR)
    {
       bdd_error(BDD_RANGE);
       return bddfalse;
