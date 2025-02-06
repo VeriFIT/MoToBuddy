@@ -410,6 +410,7 @@ int bdd_fnsave(char *fname, BDD r, char *bddname, char *bddtype)
    fprintf(ofile, "@%s\n%%Name %s\n", bddtype, bddname);
    ok = bdd_save(ofile, r);
    fclose(ofile);
+   nameR,typeR,varsR,nodesR,rootR,orderR = false; 
    return ok;
 }
 
@@ -606,7 +607,7 @@ int bdd_load(FILE *ifile, BDD *root)
 
                   if(*root < 2) // check whether constant
                   {
-                    orderR; // to account for missing ordering
+                    orderR = true; // to account for missing ordering
                   }
                   continue;
                }
@@ -737,7 +738,8 @@ static void resolve_nodes(int *root)
          if(i == unresolved-1){unresolved--;} // if we processed last element, just decrement the num of unresolved
          else
          {
-            un_nodes[i] = un_nodes[unresolved--]; // else, put last element to the place of processed
+            un_nodes[i] = un_nodes[unresolved-1]; // else, put last element to the place of processed
+            unresolved--;
             i--; // decrement i to include the moved element         
          }
 
@@ -771,7 +773,7 @@ static int bdd_loaddata(FILE *ifile)
       if ( highH<0 || lowH<0 )
       {
          add_unresolved(key, var, high, low);
-         printf("WARNING: Node %d has references to previously undefined nodes. Resolving. Performance will be heavily impacted.\n", key);
+         fprintf(stderr,"WARNING: Node %d has references to previously undefined nodes. Resolving. Performance will be heavily impacted.\n", key);
       }
       else
       {
@@ -783,12 +785,17 @@ static int bdd_loaddata(FILE *ifile)
       }
    }
 
-   for(int i = 0; i<unresolved; i++)
+   while(unresolved != 0)
    {
+      int preunresolved = unresolved;
       resolve_nodes(&root);
+      if(preunresolved == unresolved){break;} // detect loop of unresolvable nodes
    }
 
-   if(unresolved != 0){return bdd_error(BDD_FORMAT);}
+   if(unresolved != 0){
+      fprintf(stderr, "Node with id %d along with other (%d) nodes cannot be resolved.\n",un_nodes[0].key, unresolved-1);
+      return bdd_error(BDD_FORMAT);
+   }
 
    return root;
 }
