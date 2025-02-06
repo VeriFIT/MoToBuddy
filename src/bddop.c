@@ -2119,7 +2119,7 @@ static void support_rec(int r, int* support)
       return;
 
    node = &bddnodes[r];
-   if (LEVELp(node) & MARKON  ||  LOWp(node) == -1)
+   if (MARKEDp(node)  ||  LOWp(node) == -1)
       return;
 
    support[LEVELp(node)] = supportID;
@@ -2127,7 +2127,7 @@ static void support_rec(int r, int* support)
    if (LEVELp(node) > supportMax)
      supportMax = LEVELp(node);
    
-   LEVELp(node) |= MARKON;
+   SETMARKp(node);
    
    support_rec(LOWp(node), support);
    support_rec(HIGHp(node), support);
@@ -2705,11 +2705,11 @@ static void varprofile_rec(int r)
       return;
 
    node = &bddnodes[r];
-   if (LEVELp(node) & MARKON)
+   if (MARKEDp(node))
       return;
 
    varprofile[bddlevel2var[LEVELp(node)]]++;
-   LEVELp(node) |= MARKON;
+   SETMARKp(node);
    
    varprofile_rec(LOWp(node));
    varprofile_rec(HIGHp(node));

@@ -1063,11 +1063,11 @@ void bdd_gbc(void)
    {
       register BddNode *node = &bddnodes[n];
 
-      if ((LEVELp(node) & MARKON)  &&  LOWp(node) != -1)
+      if ((MARKEDp(node))  &&  LOWp(node) != -1)
       {
 	 register unsigned int hash;
 
-	 LEVELp(node) &= MARKOFF;
+	 UNMARKp(node);
 	 hash = NODEHASH(LEVELp(node), LOWp(node), HIGHp(node));
 	 node->next = bddnodes[hash].hash;
 	 bddnodes[hash].hash = n;
@@ -1165,11 +1165,10 @@ void bdd_mark(int i)
       return;
 
    node = &bddnodes[i];
-   if (LEVELp(node) & MARKON  ||  LOWp(node) == -1)
+   if (MARKEDp(node)  ||  LOWp(node) == -1)
       return;
    
-   LEVELp(node) |= MARKON;
-   
+   MARKp(node);
    bdd_mark(LOWp(node));
    bdd_mark(HIGHp(node));
 }
@@ -1182,13 +1181,13 @@ void bdd_mark_upto(int i, int level)
    if (i < 2)
       return;
    
-   if (LEVELp(node) & MARKON  ||  LOWp(node) == -1)
+   if (MARKEDp(node) ||  LOWp(node) == -1)
       return;
    
    if (LEVELp(node) > level)
       return;
 
-   LEVELp(node) |= MARKON;
+   SETMARKp(node);
 
    bdd_mark_upto(LOWp(node), level);
    bdd_mark_upto(HIGHp(node), level);
@@ -1239,10 +1238,10 @@ void bdd_unmark_upto(int i, int level)
    if (i < 2)
       return;
    
-   if (!(LEVELp(node) & MARKON))
+   if (!(MARKEDp(node)))
       return;
    
-   LEVELp(node) &= MARKOFF;
+   UNMARKp(node);
    
    if (LEVELp(node) > level)
       return;

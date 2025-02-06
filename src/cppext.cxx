@@ -238,11 +238,11 @@ ostream &operator<<(ostream &o, const bdd &r)
 
       for (int n=0 ; n<bddnodesize ; n++)
       {
-	 if (LEVEL(n) & MARKON)
+	 if (MARKED(n))
 	 {
 	    BddNode *node = &bddnodes[n];
 	 
-	    LEVELp(node) &= MARKOFF;
+	    UNMARK(n);
 
 	    o << "[" << setw(5) << n << "] ";
 	    if (strmhandler_bdd)

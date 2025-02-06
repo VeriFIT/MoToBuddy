@@ -815,10 +815,10 @@ static void addref_rec(int r, char *dep)
       bddfreenum--;
 
          /* Detect variable dependencies for the interaction matrix */
-      dep[VAR(r) & MARKHIDE] = 1;
+      dep[VAR(r)] = 1;
 
          /* Make sure the nodenum field is updated. Used in the initial GBC */
-      levels[VAR(r) & MARKHIDE].nodenum++;
+      levels[VAR(r)].nodenum++;
       
       addref_rec(LOW(r), dep);
       addref_rec(HIGH(r), dep);
@@ -830,7 +830,7 @@ static void addref_rec(int r, char *dep)
          /* Update (from previously found) variable dependencies
 	  * for the interaction matrix */
       for (n=0 ; n<bddvarnum ; n++)
-	 dep[n] |= imatrixDepends(iactmtx, VAR(r) & MARKHIDE, n);
+	 dep[n] |= imatrixDepends(iactmtx, VAR(r), n);
    }
    
    INCREF(r);

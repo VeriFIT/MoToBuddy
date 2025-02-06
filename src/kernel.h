@@ -79,7 +79,8 @@
 typedef struct s_BddNode /* Node table entry */
 {
    unsigned int refcou : 10;
-   unsigned int level  : 22;
+   unsigned int level  : 21;
+   unsigned int mark   :  1;
    int low;
    int high;
    int hash;
@@ -127,15 +128,17 @@ extern bddCacheStat bddcachestats;
 #define HASREF(n) (bddnodes[n].refcou > 0)
 
    /* Marking BDD nodes */
+   /* POSSIBLY OBSOLETE */
 #define MARKON   0x200000    /* Bit used to mark a node (1) */
 #define MARKOFF  0x1FFFFF    /* - unmark */
 #define MARKHIDE 0x1FFFFF
-#define SETMARK(n)  (bddnodes[n].level |= MARKON)
-#define UNMARK(n)   (bddnodes[n].level &= MARKOFF)
-#define MARKED(n)   (bddnodes[n].level & MARKON)
-#define SETMARKp(p) (node->level |= MARKON)
-#define UNMARKp(p)  (node->level &= MARKOFF)
-#define MARKEDp(p)  (node->level & MARKON)
+
+#define SETMARK(n)  (bddnodes[n].mark = 1)
+#define UNMARK(n)   (bddnodes[n].mark = 0)
+#define MARKED(n)   (bddnodes[n].mark)
+#define SETMARKp(p) (p->mark = 1)
+#define UNMARKp(p)  (p->mark = 0)
+#define MARKEDp(p)  (p->mark)
 
    /* Hashfunctions */
 
