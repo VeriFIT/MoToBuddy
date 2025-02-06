@@ -107,6 +107,8 @@ static BddCache quantcache;         /* Cache for exist/forall results */
 static BddCache appexcache;         /* Cache for appex/appall results */
 static BddCache replacecache;       /* Cache for replace results */
 static BddCache misccache;          /* Cache for other results */
+BddCache mtbdd_cache_apply;         /* Cache for MTBDD apply results */
+BddCache mtbdd_cache_ite;           /* Cache for MTBDD ite results */
 static int cacheratio;
 static BDD satPolarity;
 static int firstReorder;            /* Used instead of local variable in order
@@ -191,6 +193,12 @@ int bdd_operator_init(int cachesize)
    if (BddCache_init(&misccache,cachesize) < 0)
       return bdd_error(BDD_MEMORY);
 
+   if (BddCache_init(&mtbdd_cache_apply,cachesize) < 0)
+      return bdd_error(BDD_MEMORY);
+
+   if (BddCache_init(&mtbdd_cache_ite,cachesize) < 0)
+      return bdd_error(BDD_MEMORY);
+
    quantvarsetID = 0;
    quantvarset = NULL;
    cacheratio = 0;
@@ -211,6 +219,8 @@ void bdd_operator_done(void)
    BddCache_done(&appexcache);
    BddCache_done(&replacecache);
    BddCache_done(&misccache);
+   BddCache_done(&mtbdd_cache_apply);
+   BddCache_done(&mtbdd_cache_ite);
 
    if (supportSet != NULL)
      free(supportSet);
@@ -225,6 +235,8 @@ void bdd_operator_reset(void)
    BddCache_reset(&appexcache);
    BddCache_reset(&replacecache);
    BddCache_reset(&misccache);
+   BddCache_reset(&mtbdd_cache_apply);
+   BddCache_reset(&mtbdd_cache_ite);
 }
 
 
@@ -253,6 +265,8 @@ static void bdd_operator_noderesize(void)
       BddCache_resize(&appexcache, newcachesize);
       BddCache_resize(&replacecache, newcachesize);
       BddCache_resize(&misccache, newcachesize);
+      BddCache_resize(&mtbdd_cache_apply, newcachesize);
+      BddCache_resize(&mtbdd_cache_ite, newcachesize);
    }
 }
 
