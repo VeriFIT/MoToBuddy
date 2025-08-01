@@ -1,3 +1,3 @@
-# IP1-BuDDy-extension
-Working on adding extensions for MTBDDs to BuDDy library
-See https://github.com/SSoelvsten/buddy for the official BuDDy library.
+# MoToBuDDy
+A fork of the BuDDy BDD library with a support of MTBDDs.
+Forked from https://github.com/SSoelvsten/buddy.
