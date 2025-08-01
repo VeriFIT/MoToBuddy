@@ -25,6 +25,7 @@ set(HEADERS
   cache.h
   kernel.h
   prime.h
+  mtbdd.h
 )
 
 set(SOURCES
@@ -40,6 +41,7 @@ set(SOURCES
  prime.c
  reorder.c
  tree.c
+ mtbdd.c
 )
 
 # ============================================================================ #
