@@ -42,10 +42,11 @@
 #include "bdd.h"
 #include "kernel.h"
 #include <stdbool.h>
+#include "mtbdd.h"
 
 
 static void bdd_printset_rec(FILE *, int, int *);
-static void bdd_fprintdot_rec(FILE*, BDD);
+static void bdd_fprintdot_rec(FILE*, BDD, void (*p)(BDD, FILE*));
 static int  bdd_save_rec(FILE*, int);
 static int  bdd_loaddata(FILE *);
 static int  loadhash_get(int);
@@ -335,30 +336,30 @@ DESCR   {* Prints a BDD in a format suitable for use with the graph
 	   destroyed and then closed again. *}
 ALSO    {* bdd\_printall, bdd\_printtable, bdd\_printset *}
 */
-void bdd_printdot(BDD r)
+void bdd_printdot(BDD r, void (*print)(BDD, FILE*))
 {
-   bdd_fprintdot(stdout, r);
+   bdd_fprintdot(stdout, r, print);
 }
 
 
-int bdd_fnprintdot(char *fname, BDD r)
+int bdd_fnprintdot(char *fname, BDD r, void (*p)(BDD, FILE*))
 {
    FILE *ofile = fopen(fname, "w");
    if (ofile == NULL)
       return bdd_error(BDD_FILE);
-   bdd_fprintdot(ofile, r);
+   bdd_fprintdot(ofile, r, p);
    fclose(ofile);
    return 0;
 }
 
 
-void bdd_fprintdot(FILE* ofile, BDD r)
+void bdd_fprintdot(FILE* ofile, BDD r, void (*p)(BDD, FILE*))
 {
    fprintf(ofile, "digraph G {\n");
    fprintf(ofile, "0 [shape=box, label=\"0\", style=filled, shape=box, height=0.3, width=0.3];\n");
    fprintf(ofile, "1 [shape=box, label=\"1\", style=filled, shape=box, height=0.3, width=0.3];\n");
 
-   bdd_fprintdot_rec(ofile, r);
+   bdd_fprintdot_rec(ofile, r, p);
 
    fprintf(ofile, "}\n");
 
@@ -366,25 +367,34 @@ void bdd_fprintdot(FILE* ofile, BDD r)
 }
 
 
-static void bdd_fprintdot_rec(FILE* ofile, BDD r)
+static void bdd_fprintdot_rec(FILE* ofile, BDD r, void (*p)(BDD, FILE*))
 {
-   if (ISCONST(r) || MARKED(r))
+   if (ISCONST(r)){
+      return;}
+   if (MARKED(r)) {
       return;
+   }
 
    fprintf(ofile, "%d [label=\"", r);
-   if (filehandler)
-      filehandler(ofile, bddlevel2var[LEVEL(r)]);
-   else
-      fprintf(ofile, "%d", bddlevel2var[LEVEL(r)]);
-   fprintf(ofile, "\"];\n");
+      if (ISTERMINAL(r)) {         
+         p(r, ofile);
+         fprintf(ofile, "\",shape=box];\n");
+   } else {
+         if (filehandler)
+            filehandler(ofile, bddlevel2var[LEVEL(r)]);
+         else
+            fprintf(ofile, "%d", bddlevel2var[LEVEL(r)]);
+            
+         fprintf(ofile, "\"];\n");
+         fprintf(ofile, "%d -> %d [style=dotted];\n", r, LOW(r));
+         fprintf(ofile, "%d -> %d [style=filled];\n", r, HIGH(r));
+         
+         SETMARK(r);
 
-   fprintf(ofile, "%d -> %d [style=dotted];\n", r, LOW(r));
-   fprintf(ofile, "%d -> %d [style=filled];\n", r, HIGH(r));
+         bdd_fprintdot_rec(ofile, LOW(r), p);
+         bdd_fprintdot_rec(ofile, HIGH(r), p);
+   }
 
-   SETMARK(r);
-
-   bdd_fprintdot_rec(ofile, LOW(r));
-   bdd_fprintdot_rec(ofile, HIGH(r));
 }
 
 
@@ -759,8 +769,7 @@ static int bdd_loaddata(FILE *ifile)
    int key,var,low,high,root=0;
    char *line = NULL;
    size_t lineSize = 0;
-   bool warningPrinted = false;
-
+   bool warning_printed = false;
    while (getline(&line, &lineSize, ifile) != -1)
    {
       if(line[0] == '#')
@@ -781,8 +790,8 @@ static int bdd_loaddata(FILE *ifile)
       if ( highH<0 || lowH<0 )
       {
          add_unresolved(key, var, high, low);
-         if(!warningPrinted){
-            warningPrinted = true;
+         if(!warning_printed){
+            warning_printed = true;
             fprintf(stderr,"WARNING: Node %d has references to previously undefined nodes. Resolving. Performance will be heavily impacted.\n", key);
          }
       }
