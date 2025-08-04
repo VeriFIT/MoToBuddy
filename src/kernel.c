@@ -103,9 +103,9 @@ int*         bddvar2level;      /* Variable -> level table */
 int*         bddlevel2var;      /* Level -> variable table */
 jmp_buf      bddexception;      /* Long-jump point for interrupting calc. */
 int          bddresized;        /* Flag indicating a resize of the nodetable */
-
+int          checkSameChildren = 1;
 bddCacheStat bddcachestats;
-
+int         mtbdd = 0;
 
 /*=== PRIVATE KERNEL VARIABLES =========================================*/
 
@@ -201,12 +201,19 @@ int bdd_init(int initnodesize, int cs)
    LOW(0) = HIGH(0) = 0;
    LOW(1) = HIGH(1) = 1;
    
-   if ((err=bdd_operator_init(cs)) < 0)
-   {
-      bdd_done();
-      return err;
+   if (mtbdd) {
+      if ((err=mtbdd_operator_init(cs)) < 0)
+      {
+         bdd_done();
+         return err;
+      }
+   } else {
+      if ((err=bdd_operator_init(cs)) < 0)
+      {
+         bdd_done();
+         return err;
+      }
    }
-
    bddfreepos = 2;
    bddfreenum = bddnodesize-2;
    bddrunning = 1;
@@ -256,18 +263,28 @@ void bdd_done(void)
    bdd_fdd_done();
    bdd_reorder_done();
    bdd_pairs_done();
-   
+   for (int i = 0; i < bddnodesize; i++) {
+      BddNode node = bddnodes[i];
+      if(LEVELp(&node) == MAXLEVEL){mtbdd_delete_terminal(&node);}
+   }
    free(bddnodes);
    free(bddrefstack);
    free(bddvarset);
    free(bddvar2level);
    free(bddlevel2var);
+   free(mtbddterminalVals.doubleValues);
    
    bddnodes = NULL;
    bddrefstack = NULL;
    bddvarset = NULL;
+   mtbddterminalVals.doubleValues = NULL;
 
-   bdd_operator_done();
+   if (mtbdd) {
+      mtbdd_operator_done();
+   } else {
+      bdd_operator_done();
+   }
+
 
    bddrunning = 0;
    bddnodesize = 0;
@@ -806,8 +823,8 @@ const char *bdd_errstring(int e)
 
 void bdd_default_errhandler(int e)
 {
-   fprintf(stderr, "BDD error: %s\n", bdd_errstring(e));
-   exit(1);
+   fprintf(stderr, "BD error: %s\n", bdd_errstring(e));
+   exit(abs(e));
 }
 
 
@@ -940,8 +957,11 @@ RETURN  {* The variable number. *}
 int bdd_var(BDD root)
 {
    CHECK(root);
-   if (root < 2)
+   if (root < 2) {
+      printf("var\n");
+      fflush(stdout);
       return bdd_error(BDD_ILLBDD);
+   }
 
    return (bddlevel2var[LEVEL(root)]);
 }
@@ -959,9 +979,11 @@ ALSO    {* bdd\_high *}
 BDD bdd_low(BDD root)
 {
    CHECK(root);
-   if (root < 2)
+   if (root < 2) {
+            printf("low\n");
+      fflush(stdout);
       return bdd_error(BDD_ILLBDD);
-
+   }
    return (LOW(root));
 }
 
@@ -978,9 +1000,11 @@ ALSO    {* bdd\_low *}
 BDD bdd_high(BDD root)
 {
    CHECK(root);
-   if (root < 2)
+   if (root < 2) {
+      printf("high\n");
+      fflush(stdout);
       return bdd_error(BDD_ILLBDD);
-
+   }
    return (HIGH(root));
 }
 
@@ -1034,6 +1058,8 @@ static void bdd_gbc_rehash(void)
 
 void bdd_gbc(void)
 {
+   printf("gbc begun");
+   fflush(stdout);
    int *r;
    int n;
    long int c2, c1 = clock();
@@ -1066,29 +1092,39 @@ void bdd_gbc(void)
    {
       register BddNode *node = &bddnodes[n];
 
-      if ((MARKEDp(node))  &&  LOWp(node) != -1)
+      if (((MARKEDp(node))  &&  LOWp(node) != -1) )
       {
 	 register unsigned int hash;
 
 	 UNMARKp(node);
-	if(LEVELp(node) == MAXLEVEL && DOMAIN_NOT_SHORT){
+    if(LEVELp(node) == MAXLEVEL &&  DOMAIN_NOT_SHORT){
       hash = mtbdd_terminal_hash_gbc(mtbdd_getvaluep(node));
     } // when value in the table
-	 else{hash = NODEHASH(LEVELp(node), LOWp(node), HIGHp(node));}
-	 node->next = bddnodes[hash].hash;
-	 bddnodes[hash].hash = n;
+	 else {
+      hash = NODEHASH(LEVELp(node), LOWp(node), HIGHp(node));
+   }
+      node->next = bddnodes[hash].hash;
+      bddnodes[hash].hash = n;
       }
-      else
-      {
-    if(LEVELp(node) == MAXLEVEL){mtbdd_delete_terminal(node);}
-	 LOWp(node) = -1;
-	 node->next = bddfreepos;
-	 bddfreepos = n;
-	 bddfreenum++;
+      else {
+         if(LEVELp(node) == MAXLEVEL) {
+            mtbdd_delete_terminal(node); // never called
+         } 
+         
+         LOWp(node) = -1;
+         
+         
+         node->next = bddfreepos;
+         bddfreepos = n;
+         bddfreenum++;
       }
    }
+   if(mtbdd) {
+      mtbdd_operator_reset();
+   } else {
+      bdd_operator_reset();
+   }
 
-   bdd_operator_reset();
 
    c2 = clock();
    gbcclock += c2-c1;
@@ -1120,13 +1156,21 @@ ALSO    {* bdd\_delref *}
 RETURN  {* The BDD node {\tt r}. *}
 */
 BDD bdd_addref(BDD root)
-{
+{   
    if (root < 2  ||  !bddrunning)
       return root;
    if (root >= bddnodesize)
+   {
+      printf("addref1\n");
+      fflush(stdout);
       return bdd_error(BDD_ILLBDD);
+   }
    if (LOW(root) == -1)
+   {
+      printf("addref2\n");
+      fflush(stdout);
       return bdd_error(BDD_ILLBDD);
+   }
 
    INCREF(root);
    return root;
@@ -1149,11 +1193,16 @@ BDD bdd_delref(BDD root)
 {
    if (root < 2  ||  !bddrunning)
       return root;
-   if (root >= bddnodesize)
+   if (root >= bddnodesize) {
+      printf("delref1\n");
+      fflush(stdout);
       return bdd_error(BDD_ILLBDD);
-   if (LOW(root) == -1)
+   }
+   if (LOW(root) == -1){
+      printf("delref2\n");
+      fflush(stdout);
       return bdd_error(BDD_ILLBDD);
-
+   }
    /* if the following line is present, fails there much earlier */ 
    if (!HASREF(root)) bdd_error(BDD_BREAK); /* distinctive */
    
@@ -1168,14 +1217,21 @@ void bdd_mark(int i)
 {
    BddNode *node;
    
-   if (i < 2)
+   if (i < 2){
       return;
+   }
 
    node = &bddnodes[i];
-   if (MARKEDp(node)  ||  LOWp(node) == -1)
+   if (MARKEDp(node))
       return;
-   
+   if (LOWp(node) == -1)
+      return;
+
    SETMARKp(node);
+
+   if (LEVELp(node) == MAXLEVEL)
+      return;   
+
    bdd_mark(LOWp(node));
    bdd_mark(HIGHp(node));
 }
@@ -1188,7 +1244,7 @@ void bdd_mark_upto(int i, int level)
    if (i < 2)
       return;
    
-   if (MARKEDp(node) ||  LOWp(node) == -1)
+   if (MARKEDp(node)  ||  LOWp(node) == -1)
       return;
    
    if (LEVELp(node) > level)
@@ -1245,7 +1301,7 @@ void bdd_unmark_upto(int i, int level)
    if (i < 2)
       return;
    
-   if (!(MARKEDp(node)))
+   if (!MARKEDp(node))
       return;
    
    UNMARKp(node);
@@ -1267,7 +1323,6 @@ int bdd_makenode(unsigned int level, int low, int high)
    register BddNode *node;
    register unsigned int hash;
    register int res;
-
 #ifdef CACHESTATS
    bddcachestats.uniqueAccess++;
 #endif
@@ -1275,9 +1330,12 @@ int bdd_makenode(unsigned int level, int low, int high)
 
    if(level != MAXLEVEL || !DOMAIN_NOT_SHORT){
       /* check whether childs are equal */
-      if (level != MAXLEVEL && low == high){
-         return low;
+      if (checkSameChildren) {
+         if (level != MAXLEVEL && low == high){
+            return low;
+         }
       }
+
       /* Try to find an existing non-terminal node of this kind */
    res = bddnodes[hash].hash;
 
@@ -1297,7 +1355,7 @@ int bdd_makenode(unsigned int level, int low, int high)
 #endif
    }
    }/* if(level != MAXLEVEL) */
-
+   
       /* No existing node -> build one */
 #ifdef CACHESTATS
    bddcachestats.uniqueMiss++;
@@ -1306,31 +1364,33 @@ int bdd_makenode(unsigned int level, int low, int high)
       /* Any free nodes to use ? */
    if (bddfreepos == 0)
    {
-      if (bdderrorcond)
-	 return 0;
       
-         /* Try to allocate more nodes */
-      bdd_gbc();
+      if (bdderrorcond)
+         return 0;
+         
+            /* Try to allocate more nodes */
+         bdd_gbc();
 
-      if ((bddnodesize-bddfreenum) >= usednodes_nextreorder  &&
-	   bdd_reorder_ready())
-      {
-	 longjmp(bddexception,1);
-      }
+         if ((bddnodesize-bddfreenum) >= usednodes_nextreorder  &&
+         bdd_reorder_ready())
+         {
+      longjmp(bddexception,1);
+         }
 
-      if ((bddfreenum*100) / bddnodesize <= minfreenodes)
-      {
-	 bdd_noderesize(1);
-	 hash = NODEHASH(level, low, high);
-      }
+         if ((bddfreenum*100) / bddnodesize <= minfreenodes)
+         {
+      bdd_noderesize(1);
+      hash = NODEHASH(level, low, high);
+         }
 
-         /* Panic if that is not possible */
-      if (bddfreepos == 0)
-      {
-	 bdd_error(BDD_NODENUM);
-	 bdderrorcond = abs(BDD_NODENUM);
-	 return 0;
-      }
+            /* Panic if that is not possible */
+         if (bddfreepos == 0)
+         {
+            
+      bdd_error(BDD_NODENUM);
+      bdderrorcond = abs(BDD_NODENUM);
+      return 0;
+         }
    }
 
       /* Build new node */

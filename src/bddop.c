@@ -109,6 +109,7 @@ static BddCache replacecache;       /* Cache for replace results */
 static BddCache misccache;          /* Cache for other results */
 BddCache mtbdd_cache_apply;         /* Cache for MTBDD apply results */
 BddCache mtbdd_cache_ite;           /* Cache for MTBDD ite results */
+BddCache mtbdd_cache_operation;           /* Cache for MTBDD operation results */
 static int cacheratio;
 static BDD satPolarity;
 static int firstReorder;            /* Used instead of local variable in order
@@ -173,6 +174,19 @@ static int    varset2svartable(BDD);
   Setup and shutdown
 *************************************************************************/
 
+int mtbdd_operator_init(int cachesize) {
+
+   if (BddCache_init(&mtbdd_cache_apply,cachesize) < 0)
+      return bdd_error(BDD_MEMORY);
+   if (BddCache_init(&mtbdd_cache_ite,cachesize) < 0)
+      return bdd_error(BDD_MEMORY);
+   if (BddCache_init(&mtbdd_cache_operation,cachesize) < 0)
+      return bdd_error(BDD_MEMORY);
+
+   cacheratio = 0;
+   return 0;
+}
+
 int bdd_operator_init(int cachesize)
 {
    if (BddCache_init(&applycache,cachesize) < 0)
@@ -192,13 +206,7 @@ int bdd_operator_init(int cachesize)
 
    if (BddCache_init(&misccache,cachesize) < 0)
       return bdd_error(BDD_MEMORY);
-
-   if (BddCache_init(&mtbdd_cache_apply,cachesize) < 0)
-      return bdd_error(BDD_MEMORY);
-
-   if (BddCache_init(&mtbdd_cache_ite,cachesize) < 0)
-      return bdd_error(BDD_MEMORY);
-
+   mtbdd_operator_init(cachesize);
    quantvarsetID = 0;
    quantvarset = NULL;
    cacheratio = 0;
@@ -208,6 +216,15 @@ int bdd_operator_init(int cachesize)
 }
 
 
+
+void mtbdd_operator_done(void)
+{
+   
+   BddCache_done(&mtbdd_cache_apply);
+   BddCache_done(&mtbdd_cache_ite);
+   BddCache_done(&mtbdd_cache_operation);
+
+}
 void bdd_operator_done(void)
 {
    if (quantvarset != NULL)
@@ -221,11 +238,20 @@ void bdd_operator_done(void)
    BddCache_done(&misccache);
    BddCache_done(&mtbdd_cache_apply);
    BddCache_done(&mtbdd_cache_ite);
+   BddCache_done(&mtbdd_cache_operation);
+   mtbdd_operator_done();
 
    if (supportSet != NULL)
      free(supportSet);
 }
 
+
+void mtbdd_operator_reset(void)
+{
+   BddCache_reset(&mtbdd_cache_apply);
+   BddCache_reset(&mtbdd_cache_ite);
+   BddCache_reset(&mtbdd_cache_operation);
+}
 
 void bdd_operator_reset(void)
 {
@@ -237,7 +263,11 @@ void bdd_operator_reset(void)
    BddCache_reset(&misccache);
    BddCache_reset(&mtbdd_cache_apply);
    BddCache_reset(&mtbdd_cache_ite);
+   BddCache_reset(&mtbdd_cache_operation);
+   mtbdd_operator_reset();
 }
+
+
 
 
 void bdd_operator_varresize(void)
@@ -252,6 +282,17 @@ void bdd_operator_varresize(void)
    quantvarsetID = 0;
 }
 
+static void mtbdd_operator_noderesize(void)
+{
+   if (cacheratio > 0)
+   {
+      int newcachesize = bddnodesize / cacheratio;
+      
+      BddCache_resize(&mtbdd_cache_apply, newcachesize);
+      BddCache_resize(&mtbdd_cache_ite, newcachesize);
+      BddCache_resize(&mtbdd_cache_operation, newcachesize);
+   }
+}
 
 static void bdd_operator_noderesize(void)
 {
@@ -267,8 +308,13 @@ static void bdd_operator_noderesize(void)
       BddCache_resize(&misccache, newcachesize);
       BddCache_resize(&mtbdd_cache_apply, newcachesize);
       BddCache_resize(&mtbdd_cache_ite, newcachesize);
+      BddCache_resize(&mtbdd_cache_operation, newcachesize);
+      mtbdd_operator_noderesize();
    }
 }
+
+
+
 
 
 /*************************************************************************
@@ -301,7 +347,12 @@ int bdd_setcacheratio(int r)
       return old;
    
    cacheratio = r;
-   bdd_operator_noderesize();
+   if (mtbdd) {
+      mtbdd_operator_noderesize();
+   } else {
+      bdd_operator_noderesize();
+   }
+
    return old;
 }
 
@@ -314,6 +365,13 @@ static void checkresize(void)
 {
    if (bddresized)
       bdd_operator_noderesize();
+   bddresized = 0;
+}
+
+static void mtbdd_checkresize(void)
+{
+   if (bddresized)
+      mtbdd_operator_noderesize();
    bddresized = 0;
 }
 
@@ -514,8 +572,8 @@ BDD bdd_apply(BDD l, BDD r, int op)
 {
    BDD res;
    firstReorder = 1;
-   
-   CHECKa(l, bddfalse);
+
+   CHECKa(l, bddfalse);   
    CHECKa(r, bddfalse);
 
    if (op<0 || op>bddop_invimp)

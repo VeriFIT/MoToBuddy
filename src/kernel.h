@@ -55,24 +55,25 @@
    /* Sanity check argument and return eventual error code */
 #define CHECK(r)\
    if (!bddrunning) return bdd_error(BDD_RUNNING);\
-   else if ((r) < 0  ||  (r) >= bddnodesize) return bdd_error(BDD_ILLBDD);\
-   else if (r >= 2 && LOW(r) == -1) return bdd_error(BDD_ILLBDD)\
+   else if ((r) < 0  ||  (r) >= bddnodesize){ printf("check\n"); fflush(stdout);return bdd_error(BDD_ILLBDD);}\
+   else if (r >= 2 && LOW(r) == -1) { printf("check2\n"); fflush(stdout);return bdd_error(BDD_ILLBDD); }\
 
    /* Sanity check argument and return eventually the argument 'a' */
 #define CHECKa(r,a)\
    if (!bddrunning) { bdd_error(BDD_RUNNING); return (a); }\
    else if ((r) < 0  ||  (r) >= bddnodesize)\
-     { bdd_error(BDD_ILLBDD); return (a); }\
+     { printf("checkA\n"); fflush(stdout); bdd_error(BDD_ILLBDD); return (a); }\
    else if (r >= 2 && LOW(r) == -1)\
-     { bdd_error(BDD_ILLBDD); return (a); }
+     {printf("checkA2 %d\n", r); fflush(stdout);bdd_error(BDD_ILLBDD); return (a); }
 
 #define CHECKn(r)\
    if (!bddrunning) { bdd_error(BDD_RUNNING); return; }\
    else if ((r) < 0  ||  (r) >= bddnodesize)\
-     { bdd_error(BDD_ILLBDD); return; }\
+     { printf("checkn\n"); fflush(stdout);bdd_error(BDD_ILLBDD); return; }\
    else if (r >= 2 && LOW(r) == -1)\
-     { bdd_error(BDD_ILLBDD); return; }
+     { printf("checkn2\n"); fflush(stdout);bdd_error(BDD_ILLBDD); return; }
 
+#define MAXLEVEL 0x1FFFFF
 
 /*=== SEMI-INTERNAL TYPES ==============================================*/
 
@@ -109,22 +110,23 @@ union{
    int next;
 } BddNode;
 
+
 /*=== KERNEL VARIABLES =================================================*/
 
 #ifdef CPLUSPLUS
 extern "C" {
 #endif
 
-extern int          bddrunning;            /* Flag - package initialized */
-extern int          bdderrorcond;          /* Some error condition was met */
-extern int          bddnodesize;           /* Number of allocated nodes */
-extern int          bddmaxnodesize;        /* Maximum allowed number of nodes */
-extern int          bddmaxnodeincrease;    /* Max. # of nodes used to inc. table */
-extern BddNode*     bddnodes;              /* All of the bdd nodes */
-extern int          bddvarnum;             /* Number of defined BDD variables */
-extern int*         bddrefstack;           /* Internal node reference stack */
-extern int*         bddrefstacktop;        /* Internal node reference stack top */
-extern int          mtbddTerminalUsed;     /* Number of allocated terminal values */
+extern int          bddrunning;         /* Flag - package initialized */
+extern int          bdderrorcond;       /* Some error condition was met */
+extern int          bddnodesize;        /* Number of allocated nodes */
+extern int          bddmaxnodesize;     /* Maximum allowed number of nodes */
+extern int          bddmaxnodeincrease; /* Max. # of nodes used to inc. table */
+extern BddNode*     bddnodes;           /* All of the bdd nodes */
+extern int          bddvarnum;          /* Number of defined BDD variables */
+extern int*         bddrefstack;        /* Internal node reference stack */
+extern int*         bddrefstacktop;     /* Internal node reference stack top */
+extern int          mtbddTerminalUsed;  /* Number of allocated terminal values */
 extern int          mtbddmaxTerminalSize;
 extern int*         bddvar2level;
 extern int*         bddlevel2var;
@@ -132,6 +134,9 @@ extern jmp_buf      bddexception;
 extern int          bddreorderdisabled;
 extern int          bddresized;
 extern bddCacheStat bddcachestats;
+extern int checkSameChildren;
+extern void(*customFree)(void*);
+extern int mtbdd;
 
 #ifdef CPLUSPLUS
 }
@@ -142,7 +147,6 @@ extern bddCacheStat bddcachestats;
 
 #define MAXVAR 0x1FFFFF
 #define MAXREF 0x3FF
-#define MAXLEVEL 0x1FFFFF
 
    /* Reference counting */
 #define DECREF(n) if (bddnodes[n].refcou!=MAXREF && bddnodes[n].refcou>0) bddnodes[n].refcou--
@@ -152,6 +156,7 @@ extern bddCacheStat bddcachestats;
 #define HASREF(n) (bddnodes[n].refcou > 0)
 
    /* Marking BDD nodes */
+
    /* POSSIBLY OBSOLETE */
 #define MARKON   0x200000    /* Bit used to mark a node (1) */
 #define MARKOFF  0x1FFFFF    /* - unmark */
@@ -229,6 +234,10 @@ extern int    bdd_operator_init(int);
 extern void   bdd_operator_done(void);
 extern void   bdd_operator_varresize(void);
 extern void   bdd_operator_reset(void);
+
+extern int    mtbdd_operator_init(int);
+extern void   mtbdd_operator_done(void);
+extern void   mtbdd_operator_reset(void);
 
 extern void   bdd_pairs_init(void);
 extern void   bdd_pairs_done(void);
