@@ -48,11 +48,11 @@ int BddCache_init(BddCache *cache, int size)
 
    size = bdd_prime_gte(size);
    
-   if ((cache->table=NEW(BddCacheData,size)) == NULL)
+   // replaced with calloc for zero initialisation
+   if ((cache->table = (BddCacheData*)calloc(size, sizeof(BddCacheData))) == NULL)
       return bdd_error(BDD_MEMORY);
    
-   for (n=0 ; n<size ; n++)
-      cache->table[n].a = -1;
+   cache->current_generation = 1; // set to 1, so all empty values are invalid
    cache->tablesize = size;
    
    return 0;
@@ -75,11 +75,11 @@ int BddCache_resize(BddCache *cache, int newsize)
 
    newsize = bdd_prime_gte(newsize);
    
-   if ((cache->table=NEW(BddCacheData,newsize)) == NULL)
+   // replaced with calloc for zero initialisation
+   if ((cache->table = (BddCacheData*)calloc(newsize, sizeof(BddCacheData))) == NULL) 
       return bdd_error(BDD_MEMORY);
    
-   for (n=0 ; n<newsize ; n++)
-      cache->table[n].a = -1;
+   cache->current_generation = cache->current_generation + 1;
    cache->tablesize = newsize;
    
    return 0;
@@ -88,9 +88,7 @@ int BddCache_resize(BddCache *cache, int newsize)
 
 void BddCache_reset(BddCache *cache)
 {
-   register int n;
-   for (n=0 ; n<cache->tablesize ; n++)
-      cache->table[n].a = -1;
+   cache->current_generation = cache->current_generation + 1;
 }
 
 

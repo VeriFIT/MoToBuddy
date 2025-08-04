@@ -46,6 +46,7 @@ typedef struct
       int res;
    } r;
    int a,b,c;
+   int generation;
 } BddCacheData;
 
 
@@ -53,6 +54,7 @@ typedef struct
 {
    BddCacheData *table;
    int tablesize;
+   int current_generation;
 } BddCache;
 
 
@@ -62,6 +64,15 @@ extern int  BddCache_resize(BddCache *, int);
 extern void BddCache_reset(BddCache *);
 
 #define BddCache_lookup(cache, hash) (&(cache)->table[hash % (cache)->tablesize])
+#define BddCache_is_valid(cache, entry) \
+    ((entry)->generation == (cache)->current_generation)
+#define BddCache_store(entry, cache, as, bs, cs, ress) \
+   (((entry)->a = as), \
+    ((entry)->b = bs), \
+    ((entry)->c = cs), \
+    ((entry)->r.res = ress), \
+    ((entry)->generation = (cache)->current_generation))
+   
 
 
 #endif /* _CACHE_H */
