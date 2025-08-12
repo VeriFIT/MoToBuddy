@@ -96,7 +96,7 @@ union{
 
       struct{
          unsigned index;
-         unsigned type;
+         mtbdd_terminal_type type;
       }; // for terminal nodes with values in external table
 
 
@@ -134,9 +134,22 @@ extern jmp_buf      bddexception;
 extern int          bddreorderdisabled;
 extern int          bddresized;
 extern bddCacheStat bddcachestats;
+
 extern int checkSameChildren;
 extern void(*customFree)(void*);
 extern int mtbdd;
+extern int mtbdd_apply_invalid_value_flag;
+extern int mtbdd_operation_invalid_value_flag;
+
+#define FLAG_INVALID_APPLY() (mtbdd_apply_invalid_value_flag = 1)
+#define FLAG_VALID_APPLY() (mtbdd_apply_invalid_value_flag = 0)
+#define APPLY_RESULT_VALID (mtbdd_apply_invalid_value_flag == 0)
+#define APPLY_RESULT_INVALID (mtbdd_apply_invalid_value_flag != 0)
+#define FLAG_INVALID_OPERATION()    (mtbdd_operation_invalid_value_flag = 1)
+#define FLAG_VALID_OPERATION()      (mtbdd_operation_invalid_value_flag = 0)
+#define OPERATION_RESULT_VALID    (mtbdd_operation_invalid_value_flag == 0)
+#define OPERATION_RESULT_INVALID  (mtbdd_operation_invalid_value_flag != 0)
+
 
 #ifdef CPLUSPLUS
 }
@@ -186,6 +199,7 @@ extern int mtbdd;
 #define LEVELp(p)   ((p)->level)
 #define LOWp(p)     ((p)->low)
 #define HIGHp(p)    ((p)->high)
+#define TERMINALTYPEp(p) ((p)->type)
 
    /* Stacking for garbage collector */
 #define INITREF    bddrefstacktop = bddrefstack

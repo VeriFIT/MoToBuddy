@@ -5,11 +5,14 @@ int         mtbddTerminalUsed;     /* Number of allocated terminal values */
 int         mtbddmaxTerminalSize;  /* Maximum allowed number of terminal values */
 int         mtbddLastValueIndex;   /* Index of the "rightmost" free element */
 mtbddValues mtbddterminalVals;     /* All of the terminal values */
-domainTypes domaintype = -1;            /* Type of value in terminal nodes */
-extern int checkSameChildren;
-unsigned (*customHash)(void *) = NULL;
-int (*customCompare)(void *, void *) = NULL;
-void (*customFree)(void *);
+domainTypes domaintype = -1;       /* Type of value in terminal nodes */
+extern int  checkSameChildren;
+int         mtbdd_apply_invalid_value_flag;
+int mtbdd_operation_invalid_value_flag;
+
+unsigned  (*customHash)(void *) = NULL;
+int       (*customCompare)(void *, void *) = NULL;
+void      (*customFree)(void *);
 
 #define NODEHASH(lvl,l,h) (TRIPLE(lvl,l,h) % bddnodesize)
 
@@ -26,7 +29,7 @@ void (*customFree)(void *);
  * 
  * @return ID of the created terminal node, or one of already existing and found.
  */
-int mtbdd_maketerminal(void *value){
+int mtbdd_maketerminal(void *value, mtbdd_terminal_type type) {
    if(value == NULL) {return 0;}
    BddNode *node;
    int foundTerminal;
@@ -41,7 +44,7 @@ int mtbdd_maketerminal(void *value){
          unsigned lowLong  = *(long*)value & 0xFFFFFFFF;
          unsigned highLong = (*(long*)value >> 32) & 0xFFFFFFFF;
          unsigned hashLong = NODEHASH(MAXLEVEL, lowLong, highLong);
-         foundTerminal = mtbdd_findterminal(value, hashLong);
+         foundTerminal = mtbdd_findterminal(value, hashLong, type);
          if(foundTerminal != -1){return foundTerminal;}
 
          mtbdd_insertvalue(value);
@@ -57,7 +60,7 @@ int mtbdd_maketerminal(void *value){
          unsigned lowDouble  = (unsigned)(doubleBits & 0xFFFFFFFF);
          unsigned highDouble = (unsigned)((doubleBits >> 32) & 0xFFFFFFFF);
          unsigned hashDouble = NODEHASH(MAXLEVEL, lowDouble, highDouble);
-         foundTerminal       = mtbdd_findterminal(value, hashDouble);
+         foundTerminal       = mtbdd_findterminal(value, hashDouble, type);
          if(foundTerminal != -1){return foundTerminal;}
 
          mtbdd_insertvalue(value);
@@ -68,10 +71,11 @@ int mtbdd_maketerminal(void *value){
          
          return foundTerminal;
       case CUSTOM:
-         unsigned custom = 42; // when no customHash function is set, all terminals map to one list of synonyms
-         if(customHash){custom = customHash(value);}
+         unsigned custom = 42; // when no custom hash function is set, all terminals map to one list of synonyms
+         mtbdd_terminal_hash_function_t hashfun = CUSTOMHASH(type);
+         if(hashfun){custom = hashfun(value);}
          unsigned hash = NODEHASH(MAXLEVEL, custom, 42); // 42 is a placeholder
-         foundTerminal = mtbdd_findterminal(value, hash);
+         foundTerminal = mtbdd_findterminal(value, hash, type);
          if(foundTerminal != -1){return foundTerminal;}
          
          mtbdd_insertvalue(value);
@@ -79,6 +83,7 @@ int mtbdd_maketerminal(void *value){
          foundTerminal = bdd_makenode(MAXLEVEL, custom, 42);
          node = &bddnodes[foundTerminal];
          HIGHp(node)   = mtbddTerminalUsed - 1; // set high/index to index of new terminal value
+         TERMINALTYPEp(node) = type;
          return foundTerminal;
       default:
          return -1;
@@ -197,7 +202,7 @@ int mtbdd_insertvalue(void *value){
  * 
  * @return ID of the node representing the terminal if found, -1 otherwise
  */
-int mtbdd_findterminal(void *value, unsigned hash){
+int mtbdd_findterminal(void *value, unsigned hash, mtbdd_terminal_type type){
    int res = bddnodes[hash].hash;
    unsigned index = bddnodes[res].index;
    if(index > mtbddTerminalUsed || index < 0){return -1;} // invalid index
@@ -219,12 +224,14 @@ int mtbdd_findterminal(void *value, unsigned hash){
             break;
 
          case CUSTOM:
-            if (customCompare == NULL) {
+            mtbdd_terminal_compare_function_t cmp = CUSTOMCOMPARE(type);
+            if (cmp == NULL) {
                bdd_error(BDD_OP);
                return bddfalse;
             }
-           // printf("%d, %d\n", index, mtbddmaxTerminalSize);
-            if (index < mtbddmaxTerminalSize && customCompare(value, mtbddterminalVals.customPointers[index])) {
+            if (index < mtbddmaxTerminalSize && 
+               type == bddnodes[res].type &&
+               cmp(value, mtbddterminalVals.customPointers[index])) {
                return res;
             }
             break;
@@ -248,7 +255,7 @@ int mtbdd_findterminal(void *value, unsigned hash){
  * 
  * @return Calculated hash
  */
-unsigned mtbdd_terminal_hash_gbc(void *value){
+unsigned mtbdd_terminal_hash_gbc(void *value, mtbdd_terminal_type type){
    switch(domaintype){
       case LONGVAL:
          unsigned lowLong  = *(long*)value & 0xFFFFFFFF;
@@ -262,7 +269,8 @@ unsigned mtbdd_terminal_hash_gbc(void *value){
          return NODEHASH(MAXLEVEL, lowDouble, highDouble);
 
       case CUSTOM:
-         return NODEHASH(MAXLEVEL, customHash(value), 42); 
+         mtbdd_terminal_hash_function_t hashfun = CUSTOMHASH(type);
+         return NODEHASH(MAXLEVEL, hashfun(value), 42); 
    }
 }
 
@@ -277,7 +285,7 @@ unsigned mtbdd_terminal_hash_gbc(void *value){
  * @return Pointer to the value
  */
 void *mtbdd_getTerminalValue(BDD terminal){
-   if(ISZERO(terminal)) {return NULL;} 
+   if(ISZERO(terminal)) {return NULL;}
    if(!ISTERMINAL(terminal)){
         bdd_error(BDD_OP); // TODO add better error
     }
@@ -296,6 +304,7 @@ void *mtbdd_getTerminalValue(BDD terminal){
             return NULL;
     }
 }
+
 
 /**
  * @brief Function to obtain pointer to the value associated with given terminal.
@@ -325,6 +334,11 @@ void *mtbdd_getvaluep(BddNode* node){
     }
 }
 
+mtbdd_terminal_type mtbdd_get_terminal_type(BDD terminal) {
+   return bddnodes[terminal].type;
+}
+
+
 BDD mtbdd_apply(BDD l, BDD r, void*(*op)(void*, void*)){
    CHECKa(l, bddfalse);
    CHECKa(r, bddfalse);
@@ -333,13 +347,12 @@ BDD mtbdd_apply(BDD l, BDD r, void*(*op)(void*, void*)){
       bdd_error(BDD_OP);
       return bddfalse;
    }
-   INITREF;
    BDD res = mtbdd_apply_rec(l,r,op);
 
    return res;
 }
 
-BDD mtbdd_apply_rec(BDD l, BDD r, void*(*op)(void*, void*)){
+BDD mtbdd_apply_rec(BDD l, BDD r, void*(*op)(void*, void*)) {
 
     BddCacheData *entry;
     BDD res;
@@ -353,19 +366,31 @@ BDD mtbdd_apply_rec(BDD l, BDD r, void*(*op)(void*, void*)){
     if((ISTERMINAL(l) || ISZERO(l)) && (ISZERO(r) || ISTERMINAL(r))){
         void *terminalValueL = mtbdd_getTerminalValue(l);
         void *terminalValueR = mtbdd_getTerminalValue(r);
+        mtbdd_terminal_type terminalTypeL = mtbdd_get_terminal_type(l);
+        mtbdd_terminal_type terminalTypeR = mtbdd_get_terminal_type(r);
+        if (terminalTypeL != terminalTypeR) {
+         printf("Mismatch of terminal types in APPLY.\n"); // TODO CUSTOM ERROR
+         bdd_error(BDD_ILLBDD);
+        }
         void *resultValue = op(terminalValueL,terminalValueR );
         if (resultValue == NULL) {return bdd_false();}
-        if (customCompare(resultValue, terminalValueL)) {
-            customFree(resultValue);
+        mtbdd_terminal_compare_function_t cmp = CUSTOMCOMPARE(terminalTypeL);
+        mtbdd_terminal_free_function_t freeterminal = CUSTOMFREE(terminalTypeL);
+        if (cmp == NULL) {
+         printf("Missing custom compare for type %d.\n", terminalTypeL);
+         bdd_error(BDD_OP);
+        }
+        if (cmp(resultValue, terminalValueL)) {
+            if (!freeterminal) freeterminal(resultValue);
             free(resultValue);
             return l;
         }
-        if(customCompare(resultValue, terminalValueR)) {
-            customFree(resultValue);
+        if(cmp(resultValue, terminalValueR)) {
+            if (!freeterminal) freeterminal(resultValue);
             free(resultValue);
           return r;
         }
-        res = (mtbdd_maketerminal(resultValue));
+        res = (mtbdd_maketerminal(resultValue, terminalTypeL));
         if(!DOMAIN_NOT_SHORT){ // value will be directly in the node
             free(resultValue); // we don't need the allocated one
         }
@@ -394,16 +419,91 @@ BDD mtbdd_apply_rec(BDD l, BDD r, void*(*op)(void*, void*)){
    return res;
 }
 
-BDD mtbdd_apply_unary(BDD l, void*(*op)(void*)) {
-    CHECKa(l, bddfalse);
+/**
+ * @brief User-guarded binary apply operation for MTBDDs.
+ *
+ * This version of apply allows a user-defined operation `op` to decide whether
+ * to short-circuit the recursion and return a custom result. This is useful
+ * when recursion should be overridden based on context.
+ *
+ * @param l Left-hand side MTBDD.
+ * @param r Right-hand side MTBDD.
+ * @param op User-defined binary operation. Must also set FLAG_VALID_APPLY / FLAG_INVALID_APPLY.
+ *
+ * @warning The `op` function must properly handle terminals and construct valid terminal nodes.
+ * @warning If both operands are terminals, the result of `op(l, r)` is used unconditionally.
+ * 
+ * @see mtbdd_apply_guarded_rec
+ * @see mtbdd_apply
+ * 
+ * @return Result of guarded apply.
+ */
+BDD mtbdd_apply_guarded(BDD l, BDD r, BDD(*op)(BDD, BDD)) {
+   CHECKa(l, bddfalse);
+   CHECKa(r, bddfalse);
 
-    if (op == NULL) {
-        bdd_error(BDD_OP);
-        return bddfalse;
-    }
+   if(op == NULL){
+      bdd_error(BDD_OP);
+      return bddfalse;
+   }
    INITREF;
-    BDD res = mtbdd_apply_unary_rec(l, op);
-    return res;
+   BDD res = mtbdd_apply_guarded_rec(l,r,op);
+
+   return res;
+}
+
+
+BDD mtbdd_apply_guarded_rec(BDD l, BDD r, BDD(*op)(BDD, BDD)) {
+   BddCacheData *entry;
+   BDD res = op(l,r);
+   if (APPLY_RESULT_VALID) {
+      return res;
+   }
+
+   entry = BddCache_lookup(&mtbdd_cache_apply, TRIPLE(l,r,(int)(size_t)op)); // hash is calculated from ID of left, right BDD nodes and casted address of the operation
+   if( BddCache_is_valid(&mtbdd_cache_apply, entry)
+      && entry->a == l && entry->b == r && entry->c == (int)(size_t)op){
+      return entry->r.res;
+   }
+
+   if((ISTERMINAL(l) || ISZERO(l)) && (ISZERO(r) || ISTERMINAL(r))){
+      res = op(l, r);
+   }
+   else {
+      if(LEVEL(l) == LEVEL(r)){
+         PUSHREF(mtbdd_apply_guarded_rec(LOW(l), LOW(r), op));
+         PUSHREF(mtbdd_apply_guarded_rec(HIGH(l), HIGH(r), op));
+         res = bdd_makenode(LEVEL(l), READREF(2), READREF(1));
+      }
+      else if(LEVEL(l) < LEVEL(r)){
+            PUSHREF(mtbdd_apply_guarded_rec(LOW(l), r, op));
+            PUSHREF(mtbdd_apply_guarded_rec(HIGH(l), r, op));
+            res = bdd_makenode(LEVEL(l), READREF(2), READREF(1));
+      }
+      else{
+            PUSHREF(mtbdd_apply_guarded_rec(l, LOW(r), op));
+            PUSHREF(mtbdd_apply_guarded_rec(l, HIGH(r), op));
+            res = bdd_makenode(LEVEL(r), READREF(2), READREF(1));
+      }
+
+      POPREF(2);
+   }
+   // add reference to cache
+   BddCache_store(entry, &mtbdd_cache_apply, l, r, (int)(size_t)op, res);
+   return res;
+}
+
+
+BDD mtbdd_apply_unary(BDD l, void*(*op)(void*)) {
+   CHECKa(l, bddfalse);
+
+   if (op == NULL) {
+      bdd_error(BDD_OP);
+      return bddfalse;
+   }
+   INITREF;
+   BDD res = mtbdd_apply_unary_rec(l, op);
+   return res;
 }
 
 BDD mtbdd_apply_unary_rec(BDD l, void*(*op)(void*)) {
@@ -418,13 +518,20 @@ BDD mtbdd_apply_unary_rec(BDD l, void*(*op)(void*)) {
 
     if (ISTERMINAL(l) || ISZERO(l)) {
         void *terminalValue = mtbdd_getTerminalValue(l);
+        mtbdd_terminal_type terminalType = mtbdd_get_terminal_type(l);
         void *resultValue = op(terminalValue);
-        if (customCompare(resultValue, terminalValue)) {
-            customFree(resultValue);
+        mtbdd_terminal_compare_function_t cmp = CUSTOMCOMPARE(terminalType);
+        mtbdd_terminal_free_function_t freeterminal = CUSTOMFREE(terminalType);
+        if (cmp == NULL) {
+         printf("Custom compare missing for type %d.\n", terminalType);
+         bdd_error(BDD_OP);
+        }
+        if (cmp(resultValue, terminalValue)) {
+            if (!freeterminal) freeterminal(resultValue);
             free(resultValue);
             return l;
         }
-        res = (mtbdd_maketerminal(resultValue));
+        res = (mtbdd_maketerminal(resultValue, terminalType));
         if (!DOMAIN_NOT_SHORT) {
             free(resultValue);
         }
@@ -449,8 +556,9 @@ void mtbdd_delete_terminal(BddNode *terminal){
          return;
 
       case CUSTOM:
-         if (customFree != NULL) {
-            customFree(mtbddterminalVals.customPointers[terminal->index]);
+         mtbdd_terminal_free_function_t freeterminal = CUSTOMFREE(terminal->type);
+         if (!freeterminal) {
+            freeterminal(mtbddterminalVals.customPointers[terminal->index]);
          }
          free(mtbddterminalVals.customPointers[terminal->index]);
          mtbddterminalVals.customPointers[terminal->index] = NULL;
@@ -460,7 +568,87 @@ void mtbdd_delete_terminal(BddNode *terminal){
       default:
          return;
    }
+}
 
+/**
+ * @brief Unary apply guarded by user with an additional argument.
+ * 
+ * Recursively applies a user-defined operation to each node of the MTBDD.
+ * The user decides whether recursion should continue or stop by setting
+ * the appropriate flag using FLAG_VALID_APPLY / FLAG_INVALID_APPLY.
+ * 
+ * @note This version is slightly less performant than mtbdd_apply_unary
+ *       due to calls of `op` to every node and not checking cache first.
+ * 
+ * @warning The user MUST set the apply validity flag inside `op` using FLAG_VALID_APPLY / FLAG_INVALID_APPLY.
+ * @warning The `arg` parameter is NOT included in cache key — different calls
+ *          with the same MTBDD and op but different arg will reuse cached results.
+ * @warning When `op` is called on a terminal node, the returned result is always
+ *          used and returned - even if the result is flagged as invalid. * 
+ * @param l The MTBDD root.
+ * @param op Unary operation function with recursion control.
+ * @param arg User-defined optional argument passed to `op`.
+ * 
+ * @return Resulting MTBDD.
+ * 
+ * @see mtbdd_apply_unary_guarded_rec
+ * @see mtbdd_apply_unary
+ * 
+ * @todo arg cache
+ */
+BDD mtbdd_apply_unary_guarded(BDD l, BDD(*op)(BDD, void*), size_t arg) {
+   CHECKa(l, bddfalse);
+
+   if (op == NULL) {
+      bdd_error(BDD_OP);
+      return bddfalse;
+   }
+   INITREF;
+   BDD res = mtbdd_apply_unary_guarded_rec(l, op, arg);
+   return res;
+}
+
+/**
+ * @brief Recursive logic of guarded unary apply with argument.
+ *
+ * @see mtbdd_apply_unary_guarded
+ * 
+ * @param l MTBDD to perform apply on.
+ * @param op User-provided operation to apply.
+ * @param arg Optional argument passed to op.
+ * 
+ * @return Root of a subtree after apply.
+ */
+BDD mtbdd_apply_unary_guarded_rec(BDD l, BDD(*op)(BDD, void*), size_t arg) {
+
+   BDD res = op(l, arg);
+
+   // terminal case signalised by user
+   if (APPLY_RESULT_VALID) {
+      return res;
+   }
+
+   BddCacheData *entry;
+
+   entry = BddCache_lookup(&mtbdd_cache_apply, TRIPLE(l, (int)(size_t)op, arg));
+   if ( BddCache_is_valid(&mtbdd_cache_apply, entry) && 
+      entry->a == l && entry->b == arg && entry->c == (int)(size_t)op) {
+      return entry->r.res;
+   }
+
+   // terminal case even if user signals invalid
+   // cannot call apply on LOW or HIGH of terminals
+   if (ISTERMINAL(l) || ISCONST(l)) {
+      return res;
+   } else {
+      PUSHREF(mtbdd_apply_unary_guarded_rec(LOW(l), op, arg));
+      PUSHREF(mtbdd_apply_unary_guarded_rec(HIGH(l), op, arg));
+      res = bdd_makenode(LEVEL(l), READREF(2), READREF(1));
+      POPREF(2);
+   }
+
+   BddCache_store(entry, &mtbdd_cache_apply, l, arg, (int)(size_t)op, res);
+   return res;
 }
 
 BDD mtbdd_set_decision(BDD f, BDD g, BDD h){
@@ -596,9 +784,15 @@ void mtbdd_IndexStackFree(mtbddValues *vals){
    }
 }
 
-BDD mtbdd_operation(BDD operand, size_t* controls, size_t controlNum, BDD(*op)(size_t, BDD, BDD)) {
+BDD mtbdd_operation(BDD operand, size_t *controls, size_t controlNum, BDD(*op)(size_t, BDD, BDD)) {
+   CHECKa(operand, bddfalse);
+   return mtbdd_operation_rec(operand, controls, controlNum, op);
+}
+
+
+BDD mtbdd_operation_rec(BDD operand, size_t* controls, size_t controlNum, BDD(*op)(size_t, BDD, BDD)) {
    CHECKa(operand, bddfalse); // sanity check
-   if (operand == bdd_false()) { bdd_false(); }
+   if (operand == bdd_false()) { return bdd_false(); }
    if (op == NULL) {
       bdd_error(BDD_OP);
       return bddfalse;
@@ -616,8 +810,10 @@ BDD mtbdd_operation(BDD operand, size_t* controls, size_t controlNum, BDD(*op)(s
    BDD targetDD = operand;
    if (LEVEL(targetDD) > control || ISTERMINAL(targetDD) || ISCONST(targetDD)) {
       checkSameChildren = 0;
-      targetDD = bdd_makenode(control, operand, operand);
+      PUSHREF(operand);
+      targetDD = bdd_makenode(control, READREF(1), READREF(1));
       checkSameChildren = 1;
+      POPREF(1);
    }
 
    BDD res;
@@ -629,8 +825,93 @@ BDD mtbdd_operation(BDD operand, size_t* controls, size_t controlNum, BDD(*op)(s
       }
    }
    else if (LEVEL(targetDD) == control) {
+      PUSHREF(mtbdd_operation_rec(HIGH(targetDD), controls + 1, controlNum - 1, op));
+      res = bdd_makenode(control, LOW(targetDD), READREF(1));
+      POPREF(1);
+   }
+   else if (LEVEL(targetDD) < control) {
+      BDD oldLow = LOW(targetDD);
+      BDD oldHigh = HIGH(targetDD);
+      PUSHREF(mtbdd_operation_rec(LOW(targetDD), controls, controlNum, op)); // low
+      PUSHREF(mtbdd_operation_rec(HIGH(targetDD), controls, controlNum, op)); // high
+      if (READREF(2) == oldLow &&
+      READREF(1) == oldHigh) {
+         res = targetDD; // no change
+      } else {
+         res = bdd_makenode(LEVEL(targetDD), READREF(2), 
+         READREF(1));
+      }
+      POPREF(2);
+
+   } else {
+      res = targetDD;
+   }
+   BddCache_store(entry, &mtbdd_cache_operation, operand, control, (int)(size_t)op, res);
+   return res;
+}
+
+
+/**
+ * @brief Extended version of mtbdd_operation allowing user-defined guarded recursion.
+ * 
+ * This function performs a recursive operation on an MTBDD, but first gives control
+ * to a user-specified function `op` to decide whether to override the recursion.
+ * 
+ * If `op` sets the global flag `FLAG_VALID_OPERATION()`, the returned node is assumed
+ * valid and returned immediately. Otherwise, normal recursion and caching proceed.
+ * 
+ * @param operand    The BDD to apply the operation to.
+ * @param controls   Array of control variables, with the last entry being the target.
+ * @param controlNum Number of control variables. If only the target is present, set to 0.
+ * @param op         User-defined operation. Signature: BDD op(size_t var, BDD node)
+ *                   The function receives the control/target variable index and the current node.
+ *                   It must also explicitly set validity using FLAG_VALID_OPERATION() or FLAG_INVALID_OPERATION().
+ * 
+ * @warning Terminal or early-exit behavior must be handled within the user function.
+ * @warning If FLAG_INVALID_OPERATION() is set, recursion proceeds regardless of returned node.
+ * 
+ * @return The resulting BDD after applying the guarded operation.
+ */
+BDD mtbdd_operation_guarded(BDD operand, size_t* controls, size_t controlNum, BDD(*op)(size_t, BDD)) {
+   CHECKa(operand, bddfalse); // sanity check
+   if (operand == bdd_false()) { return bdd_false(); }
+   if (op == NULL) {
+      bdd_error(BDD_OP);
+      return bddfalse;
+   }
+
+   size_t control = controls[0];
+   
+   BDD res = op(control, operand); // check if recursion needed
+   
+   if (OPERATION_RESULT_VALID) { // recursion not needed
+      return res; // return valid result
+   }
+
+   // continue recursion and general operation
+   BddCacheData *entry = BddCache_lookup(&mtbdd_cache_operation, TRIPLE(operand, control, (int)(size_t)op));
+   size_t hash = TRIPLE(operand, control, (int)(size_t)op);
+   if (BddCache_is_valid(&mtbdd_cache_operation, entry) &&
+      entry->a == operand && entry->b == control && entry->c == (int)(size_t)op) {
+      return entry->r.res;
+   }
+
+   BDD targetDD = operand;
+   if (LEVEL(targetDD) > control || ISTERMINAL(targetDD) || ISCONST(targetDD)) {
+      checkSameChildren = 0;
+      targetDD = bdd_makenode(control, operand, operand);
+      checkSameChildren = 1;
+   }
+   
+   if (LEVEL(targetDD) == control && controlNum == 0) {
+      res = op(control, targetDD);
+      if (HIGH(res) == LOW(res)) {
+         res = LOW(res);
+      }
+   }
+   else if (LEVEL(targetDD) == control) {
       targetDD;
-      BDD high = bdd_addref(mtbdd_operation(HIGH(targetDD), controls + 1, controlNum - 1, op));
+      BDD high = bdd_addref(mtbdd_operation_guarded(HIGH(targetDD), controls + 1, controlNum - 1, op));
       res = bdd_makenode(control, LOW(targetDD), high);
       bdd_delref(high);
    }
@@ -638,8 +919,8 @@ BDD mtbdd_operation(BDD operand, size_t* controls, size_t controlNum, BDD(*op)(s
       BDD oldLow = LOW(targetDD);
       BDD oldHigh = HIGH(targetDD);
 
-      BDD low = bdd_addref(mtbdd_operation(LOW(targetDD), controls, controlNum, op));
-      BDD high = bdd_addref(mtbdd_operation(HIGH(targetDD), controls, controlNum, op));
+      BDD low = bdd_addref(mtbdd_operation_guarded(LOW(targetDD), controls, controlNum, op));
+      BDD high = bdd_addref(mtbdd_operation_guarded(HIGH(targetDD), controls, controlNum, op));
 
       if (low == oldLow && high == oldHigh) {
          res = targetDD; // no change
@@ -672,4 +953,18 @@ BDD mtbdd_cube2(int value, int width, BDD *variables, BDD leaf1, BDD leaf0)
         }
     }
     return result;
+}
+
+size_t mtbdd_leaf_count(BDD mtbdd) {
+   size_t count = mtbdd_leaf_count_fn(mtbdd);
+   bdd_unmark(mtbdd);
+   return count;
+}
+
+size_t mtbdd_leaf_count_fn(BDD mtbdd) {
+   if (ISCONST(mtbdd)) return 0;
+   if (MARKED(mtbdd)) return 0;
+   SETMARK(mtbdd);
+   if (ISTERMINAL(mtbdd)) return 1;
+   return (mtbdd_leaf_count_fn(LOW(mtbdd)) + mtbdd_leaf_count_fn(HIGH(mtbdd)));
 }

@@ -1098,7 +1098,7 @@ void bdd_gbc(void)
 
 	 UNMARKp(node);
     if(LEVELp(node) == MAXLEVEL &&  DOMAIN_NOT_SHORT){
-      hash = mtbdd_terminal_hash_gbc(mtbdd_getvaluep(node));
+      hash = mtbdd_terminal_hash_gbc(mtbdd_getvaluep(node), node->type);
     } // when value in the table
 	 else {
       hash = NODEHASH(LEVELp(node), LOWp(node), HIGHp(node));

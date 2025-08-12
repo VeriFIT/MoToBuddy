@@ -3,6 +3,7 @@
 #include "kernel.h"
 #include "bdd.h"
 #include "cache.h"
+#include "terminal.h"
 
 #define SETDOMAIN(d) domaintype = d
 #define ISTERMINAL(a) (bddnodes[a].level == MAXLEVEL)
@@ -59,16 +60,21 @@ extern unsigned (*customHash)(void *);
 extern int (*customCompare)(void *, void *);
 extern void (*customFree)(void *);
 
-int mtbdd_findterminal(void *value, unsigned hash);
-int mtbdd_maketerminal(void *value);
+int mtbdd_findterminal(void *value, unsigned hash, mtbdd_terminal_type type);
+int mtbdd_maketerminal(void *value, mtbdd_terminal_type type);
 int mtbdd_insertvalue(void *value);
 void *mtbdd_getTerminalValue(BDD terminal);
+mtbdd_terminal_type mtbdd_get_terminal_type(BDD terminal);
 void *mtbdd_getvaluep(BddNode* node);
-unsigned mtbdd_terminal_hash_gbc(void *value);
+unsigned mtbdd_terminal_hash_gbc(void *value, mtbdd_terminal_type type);
 BDD mtbdd_apply(BDD l, BDD r, void*(*op)(void*, void*));
 BDD mtbdd_apply_rec(BDD l, BDD r, void*(*op)(void*, void*));
+BDD mtbdd_apply_guarded(BDD l, BDD r, BDD(*op)(BDD, BDD));
+BDD mtbdd_apply_guarded_rec(BDD l, BDD r, BDD(*op)(BDD, BDD));
 BDD mtbdd_apply_unary(BDD l, void*(*op)(void*));
 BDD mtbdd_apply_unary_rec(BDD l, void*(*op)(void*));
+BDD mtbdd_apply_unary_guarded(BDD l, BDD(*op)(BDD, void*), size_t arg);
+BDD mtbdd_apply_unary_guarded_rec(BDD l, BDD(*op)(BDD, void*), size_t arg);
 BDD mtbdd_ite(BDD f, BDD g, BDD h);
 BDD mtbdd_ite_rec(BDD f, BDD g, BDD h);
 extern BddCache mtbdd_cache_apply;
@@ -78,6 +84,8 @@ BDD mtbdd_set_decision(BDD f, BDD g, BDD h);
 void mtbdd_delete_terminal(BddNode *terminal);
 BDD mtbdd_cube2(int value, int width, BDD *variables, BDD leaf1, BDD leaf0);
 BDD mtbdd_operation(BDD operand, size_t* controls, size_t controlNum, BDD(*op)(size_t, BDD, BDD));
+BDD mtbdd_operation_rec(BDD operand, size_t* controls, size_t controlNum, BDD(*op)(size_t, BDD, BDD));
+BDD mtbdd_operation_guarded(BDD operand, size_t* controls, size_t controlNum, BDD(*op)(size_t, BDD));
 void mtbdd_IndexStackPush(mtbddValues *vals, int index);
 int  mtbdd_IndexStackPop(mtbddValues *vals);
 void mtbdd_IndexStackFree(mtbddValues *vals);
