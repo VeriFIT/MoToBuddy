@@ -75,6 +75,8 @@ BDD mtbdd_apply_unary(BDD l, void*(*op)(void*));
 BDD mtbdd_apply_unary_rec(BDD l, void*(*op)(void*));
 BDD mtbdd_apply_unary_guarded(BDD l, BDD(*op)(BDD, void*), size_t arg);
 BDD mtbdd_apply_unary_guarded_rec(BDD l, BDD(*op)(BDD, void*), size_t arg);
+BDD mtbdd_apply_unary_param(BDD l, void*(*op)(void*, size_t), size_t param);
+BDD mtbdd_apply_unary_param_rec(BDD l, void*(*op)(void*, size_t), size_t param);
 BDD mtbdd_ite(BDD f, BDD g, BDD h);
 BDD mtbdd_ite_rec(BDD f, BDD g, BDD h);
 extern BddCache mtbdd_cache_apply;
@@ -89,5 +91,6 @@ BDD mtbdd_operation_guarded(BDD operand, size_t* controls, size_t controlNum, BD
 void mtbdd_IndexStackPush(mtbddValues *vals, int index);
 int  mtbdd_IndexStackPop(mtbddValues *vals);
 void mtbdd_IndexStackFree(mtbddValues *vals);
-
+size_t mtbdd_leaf_count(BDD mtbdd);
+size_t mtbdd_leaf_count_fn(BDD mtbdd);
 #endif

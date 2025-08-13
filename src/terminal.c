@@ -2,6 +2,7 @@
 #include <string.h>
 #include "terminal.h"
 #include "bdd.h"
+#include "kernel.h"
 
 mtbdd_terminal_functions *mtbdd_terminal_functions_list = NULL;
 int mtbdd_terminal_type_number = 0;

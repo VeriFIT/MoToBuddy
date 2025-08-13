@@ -381,12 +381,12 @@ BDD mtbdd_apply_rec(BDD l, BDD r, void*(*op)(void*, void*)) {
          bdd_error(BDD_OP);
         }
         if (cmp(resultValue, terminalValueL)) {
-            if (!freeterminal) freeterminal(resultValue);
+            if (freeterminal) freeterminal(resultValue);
             free(resultValue);
             return l;
         }
         if(cmp(resultValue, terminalValueR)) {
-            if (!freeterminal) freeterminal(resultValue);
+            if (freeterminal) freeterminal(resultValue);
             free(resultValue);
           return r;
         }
@@ -527,7 +527,7 @@ BDD mtbdd_apply_unary_rec(BDD l, void*(*op)(void*)) {
          bdd_error(BDD_OP);
         }
         if (cmp(resultValue, terminalValue)) {
-            if (!freeterminal) freeterminal(resultValue);
+            if (freeterminal) freeterminal(resultValue);
             free(resultValue);
             return l;
         }
@@ -546,6 +546,58 @@ BDD mtbdd_apply_unary_rec(BDD l, void*(*op)(void*)) {
     return res;
 }
 
+BDD mtbdd_apply_unary_param(BDD l, void*(*op)(void*, size_t), size_t param) {
+   CHECKa(l, bddfalse);
+
+   if (op == NULL) {
+      bdd_error(BDD_OP);
+      return bddfalse;
+   }
+   INITREF;
+   BDD res = mtbdd_apply_unary_param_rec(l, op, param);
+   return res;
+}
+
+BDD mtbdd_apply_unary_param_rec(BDD l, void*(*op)(void*, size_t), size_t param) {
+    BddCacheData *entry;
+    BDD res;
+
+    entry = BddCache_lookup(&mtbdd_cache_apply, TRIPLE(l, (int)param, (int)(size_t)op));
+    if ( BddCache_is_valid(&mtbdd_cache_apply, entry) && 
+         entry->a == l && entry->b == (int)param && entry->c == (int)(size_t)op) {
+        return entry->r.res;
+    }
+
+    if (ISTERMINAL(l) || ISZERO(l)) {
+        void *terminalValue = mtbdd_getTerminalValue(l);
+        mtbdd_terminal_type terminalType = mtbdd_get_terminal_type(l);
+        void *resultValue = op(terminalValue, param);
+        mtbdd_terminal_compare_function_t cmp = CUSTOMCOMPARE(terminalType);
+        mtbdd_terminal_free_function_t freeterminal = CUSTOMFREE(terminalType);
+        if (cmp == NULL) {
+         printf("Custom compare missing for type %d.\n", terminalType);
+         bdd_error(BDD_OP);
+        }
+        if (cmp(resultValue, terminalValue)) {
+            if (freeterminal) freeterminal(resultValue);
+            free(resultValue);
+            return l;
+        }
+        res = (mtbdd_maketerminal(resultValue, terminalType));
+        if (!DOMAIN_NOT_SHORT) {
+            free(resultValue);
+        }
+    } else {
+        PUSHREF(mtbdd_apply_unary_param_rec(LOW(l), op, param));
+        PUSHREF(mtbdd_apply_unary_param_rec(HIGH(l), op, param));
+        res = bdd_makenode(LEVEL(l), READREF(2), READREF(1));
+        POPREF(2);
+    }
+
+    BddCache_store(entry, &mtbdd_cache_apply, l, (int)param, (int)(size_t)op, res);
+    return res;
+}
+
 void mtbdd_delete_terminal(BddNode *terminal){
    switch(domaintype){
 
@@ -557,7 +609,7 @@ void mtbdd_delete_terminal(BddNode *terminal){
 
       case CUSTOM:
          mtbdd_terminal_free_function_t freeterminal = CUSTOMFREE(terminal->type);
-         if (!freeterminal) {
+         if (freeterminal) {
             freeterminal(mtbddterminalVals.customPointers[terminal->index]);
          }
          free(mtbddterminalVals.customPointers[terminal->index]);

@@ -1,3 +1,5 @@
+#ifndef TERMINAL_H
+#define TERMINAL_H
 typedef unsigned (*mtbdd_terminal_hash_function_t)(void *);
 typedef int (*mtbdd_terminal_compare_function_t)(void *, void *);
 typedef void (*mtbdd_terminal_free_function_t)(void *);
@@ -23,3 +25,4 @@ unsigned mtbdd_new_terminal_type(void);
 void mtbdd_register_hash_function(mtbdd_terminal_type type, mtbdd_terminal_hash_function_t hashfun);
 void mtbdd_register_compare_function(mtbdd_terminal_type type, mtbdd_terminal_compare_function_t comparefun);
 void mtbdd_register_free_function(mtbdd_terminal_type type, mtbdd_terminal_free_function_t freefun);
+#endif
