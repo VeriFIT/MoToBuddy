@@ -934,9 +934,6 @@ BDD mtbdd_operation_rec(BDD operand, size_t* controls, size_t controlNum, BDD(*o
 
    if (LEVEL(targetDD) == control && controlNum == 0) {
       res = op(control, LOW(targetDD), HIGH(targetDD));
-      if (HIGH(res) == LOW(res)) {
-         res = LOW(res);
-      }
    }
    else if (LEVEL(targetDD) == control) {
       PUSHREF(mtbdd_operation_rec(HIGH(targetDD), controls + 1, controlNum - 1, op));
