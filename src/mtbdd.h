@@ -71,6 +71,8 @@ BDD mtbdd_apply(BDD l, BDD r, void*(*op)(void*, void*));
 BDD mtbdd_apply_rec(BDD l, BDD r, void*(*op)(void*, void*));
 BDD mtbdd_apply_guarded(BDD l, BDD r, BDD(*op)(BDD, BDD));
 BDD mtbdd_apply_guarded_rec(BDD l, BDD r, BDD(*op)(BDD, BDD));
+BDD mtbdd_apply_guarded_param(BDD l, BDD r, BDD(*op)(BDD, BDD, size_t), size_t param);
+BDD mtbdd_apply_guarded_param_rec(BDD l, BDD r, BDD(*op)(BDD, BDD, size_t), size_t param);
 BDD mtbdd_apply_unary(BDD l, void*(*op)(void*));
 BDD mtbdd_apply_unary_rec(BDD l, void*(*op)(void*));
 BDD mtbdd_apply_unary_guarded(BDD l, BDD(*op)(BDD, void*), size_t arg);

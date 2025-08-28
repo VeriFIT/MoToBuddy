@@ -446,7 +446,7 @@ BDD mtbdd_apply_guarded(BDD l, BDD r, BDD(*op)(BDD, BDD)) {
       bdd_error(BDD_OP);
       return bddfalse;
    }
-   INITREF;
+   //INITREF;
    BDD res = mtbdd_apply_guarded_rec(l,r,op);
 
    return res;
@@ -493,6 +493,58 @@ BDD mtbdd_apply_guarded_rec(BDD l, BDD r, BDD(*op)(BDD, BDD)) {
    return res;
 }
 
+BDD mtbdd_apply_guarded_param(BDD l, BDD r, BDD(*op)(BDD, BDD, size_t), size_t param) {
+   CHECKa(l, bddfalse);
+   CHECKa(r, bddfalse);
+
+   if(op == NULL){
+      bdd_error(BDD_OP);
+      return bddfalse;
+   }
+   BDD res = mtbdd_apply_guarded_param_rec(l,r,op,param);
+
+   return res;
+}
+
+BDD mtbdd_apply_guarded_param_rec(BDD l, BDD r, BDD(*op)(BDD, BDD, size_t), size_t param) {
+   BddCacheData *entry;
+   BDD res = op(l,r, param);
+   if (APPLY_RESULT_VALID) {
+      return res;
+   }
+
+   entry = BddCache_lookup(&mtbdd_cache_apply, TRIPLE(PAIR(l,r),(int)(size_t)op,(int)param));
+   if( BddCache_is_valid(&mtbdd_cache_apply, entry)
+      && entry->a == l && entry->b == r && entry->c == (int)(size_t)op && entry->d == (int)param){
+      return entry->r.res;
+   }
+
+   if((ISTERMINAL(l) || ISZERO(l)) && (ISZERO(r) || ISTERMINAL(r))){
+      res = op(l, r, param);
+   }
+   else {
+      if(LEVEL(l) == LEVEL(r)){
+         PUSHREF(mtbdd_apply_guarded_param_rec(LOW(l), LOW(r), op, param));
+         PUSHREF(mtbdd_apply_guarded_param_rec(HIGH(l), HIGH(r), op, param));
+         res = bdd_makenode(LEVEL(l), READREF(2), READREF(1));
+      }
+      else if(LEVEL(l) < LEVEL(r)){
+            PUSHREF(mtbdd_apply_guarded_param_rec(LOW(l), r, op, param));
+            PUSHREF(mtbdd_apply_guarded_param_rec(HIGH(l), r, op, param));
+            res = bdd_makenode(LEVEL(l), READREF(2), READREF(1));
+      }
+      else{
+            PUSHREF(mtbdd_apply_guarded_param_rec(l, LOW(r), op, param));
+            PUSHREF(mtbdd_apply_guarded_param_rec(l, HIGH(r), op, param));
+            res = bdd_makenode(LEVEL(r), READREF(2), READREF(1));
+      }
+
+      POPREF(2);
+   }
+   // add reference to cache
+   BddCache_store4(entry, &mtbdd_cache_apply, l, r, (int)param, (int)(size_t)op, res);
+   return res;
+}
 
 BDD mtbdd_apply_unary(BDD l, void*(*op)(void*)) {
    CHECKa(l, bddfalse);
@@ -501,7 +553,7 @@ BDD mtbdd_apply_unary(BDD l, void*(*op)(void*)) {
       bdd_error(BDD_OP);
       return bddfalse;
    }
-   INITREF;
+   //INITREF;
    BDD res = mtbdd_apply_unary_rec(l, op);
    return res;
 }
@@ -553,7 +605,7 @@ BDD mtbdd_apply_unary_param(BDD l, void*(*op)(void*, size_t), size_t param) {
       bdd_error(BDD_OP);
       return bddfalse;
    }
-   INITREF;
+   //INITREF;
    BDD res = mtbdd_apply_unary_param_rec(l, op, param);
    return res;
 }
@@ -655,7 +707,7 @@ BDD mtbdd_apply_unary_guarded(BDD l, BDD(*op)(BDD, void*), size_t arg) {
       bdd_error(BDD_OP);
       return bddfalse;
    }
-   INITREF;
+   //INITREF;
    BDD res = mtbdd_apply_unary_guarded_rec(l, op, arg);
    return res;
 }
