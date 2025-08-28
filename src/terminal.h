@@ -3,11 +3,14 @@
 typedef unsigned (*mtbdd_terminal_hash_function_t)(void *);
 typedef int (*mtbdd_terminal_compare_function_t)(void *, void *);
 typedef void (*mtbdd_terminal_free_function_t)(void *);
+typedef char *(*mtbdd_terminal_to_str_function_t)(void *, char *, size_t);
+
 
 typedef struct mtbdd_terminal_functions {
     mtbdd_terminal_hash_function_t hashfun;
     mtbdd_terminal_compare_function_t comparefun;
     mtbdd_terminal_free_function_t freefun;
+    mtbdd_terminal_to_str_function_t toStrFun;
 } mtbdd_terminal_functions;
 
 typedef unsigned mtbdd_terminal_type;
@@ -19,10 +22,13 @@ extern int mtbdd_terminal_type_size; // allocated size of mtbdd_terminal_functio
 #define CUSTOMCOMPARE(type) mtbdd_terminal_functions_list[type].comparefun
 #define CUSTOMHASH(type) mtbdd_terminal_functions_list[type].hashfun
 #define CUSTOMFREE(type) mtbdd_terminal_functions_list[type].freefun
+#define CUSTOMTOSTR(type) mtbdd_terminal_functions_list[type].toStrFun
 
 
 unsigned mtbdd_new_terminal_type(void);
 void mtbdd_register_hash_function(mtbdd_terminal_type type, mtbdd_terminal_hash_function_t hashfun);
 void mtbdd_register_compare_function(mtbdd_terminal_type type, mtbdd_terminal_compare_function_t comparefun);
 void mtbdd_register_free_function(mtbdd_terminal_type type, mtbdd_terminal_free_function_t freefun);
+void mtbdd_register_to_str_function(mtbdd_terminal_type type, mtbdd_terminal_to_str_function_t toStrfun);
+
 #endif

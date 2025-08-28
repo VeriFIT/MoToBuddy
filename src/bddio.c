@@ -397,6 +397,62 @@ static void bdd_fprintdot_rec(FILE* ofile, BDD r, void (*p)(BDD, FILE*))
 
 }
 
+void buddy_mtbdd_fprintdot(FILE* ofile, BDD r)
+{
+   fprintf(ofile, "digraph G {\n");
+   fprintf(ofile, "invisible [shape=point, width=0, label=\"\"];");
+   fprintf(ofile, "invisible -> %d [style=solid];", r);
+   buddy_mtbdd_fprintdot_rec(ofile, r);
+
+   fprintf(ofile, "}\n");
+
+   bdd_unmark(r);
+}
+
+void buddy_mtbdd_fprintdot_rec(FILE* ofile, BDD r) {
+   if (ISCONST(r)) {
+      fprintf(ofile, "%d [shape=box, label=\"%d\", style=filled, shape=box, height=0.3, width=0.3];\n", r,r);
+      return;
+   }
+   if (MARKED(r)) {
+      return;
+   }
+
+   fprintf(ofile, "%d [label=\"", r);
+         if (ISTERMINAL(r)) {  
+         mtbdd_terminal_type type = mtbdd_get_terminal_type(r);
+         void *terminal_val = mtbdd_getTerminalValue(r);
+         // if buffer is too small, user function should reallocate it and free the original
+         size_t buff_size = 128;
+         char *buff = (char*)malloc(buff_size);
+         mtbdd_terminal_to_str_function_t toStrFun = CUSTOMTOSTR(type);
+         if (toStrFun == NULL) {
+            printf("Missing custom to-string function for terminal type %d.\n", type);
+            bdd_error(BDD_OP);
+         }
+         buff = toStrFun(terminal_val, buff, buff_size);
+         fprintf(ofile, "%s", buff);
+         fprintf(ofile, "\", style=filled,shape=box];\n");
+         free(buff);
+         SETMARK(r);
+   } else {
+         if (filehandler)
+            filehandler(ofile, bddlevel2var[LEVEL(r)]);
+         else
+            fprintf(ofile, "%d", bddlevel2var[LEVEL(r)]);
+            
+         fprintf(ofile, "\"];\n");
+         fprintf(ofile, "%d -> %d [style=dashed];\n", r, LOW(r));
+         fprintf(ofile, "%d -> %d [style=filled];\n", r, HIGH(r));
+         
+         SETMARK(r);
+
+         buddy_mtbdd_fprintdot_rec(ofile, LOW(r));
+         buddy_mtbdd_fprintdot_rec(ofile, HIGH(r));
+   }
+
+}
+
 
 /*=== SAVE =============================================================*/
 

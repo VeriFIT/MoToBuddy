@@ -28,7 +28,6 @@ unsigned mtbdd_new_terminal_type(void) {
         mtbdd_terminal_functions_list = new_list;
         mtbdd_terminal_type_size = new_size;
     }
-
     return (unsigned)mtbdd_terminal_type_number++;
 }
 
@@ -54,4 +53,13 @@ void mtbdd_register_free_function(mtbdd_terminal_type type, mtbdd_terminal_free_
         return;
     }
     mtbdd_terminal_functions_list[type].freefun = freefun;
+}
+
+
+void mtbdd_register_to_str_function(mtbdd_terminal_type type, mtbdd_terminal_to_str_function_t toStrFun) {
+    if (type >= (unsigned)mtbdd_terminal_type_number) {
+        bdd_error(BDD_OP); // invalid type
+        return;
+    }
+    mtbdd_terminal_functions_list[type].toStrFun = toStrFun;
 }
