@@ -84,6 +84,7 @@ int mtbdd_maketerminal(void *value, mtbdd_terminal_type type) {
          node = &bddnodes[foundTerminal];
          HIGHp(node)   = mtbddTerminalUsed - 1; // set high/index to index of new terminal value
          TERMINALTYPEp(node) = type;
+         node->refcou = MAXREF;
          return foundTerminal;
       default:
          return -1;
@@ -362,22 +363,27 @@ BDD mtbdd_apply_rec(BDD l, BDD r, void*(*op)(void*, void*)) {
        && entry->a == l && entry->b == r && entry->c == (int)(size_t)op){
         return entry->r.res;
     }
-
     if((ISTERMINAL(l) || ISZERO(l)) && (ISZERO(r) || ISTERMINAL(r))){
         void *terminalValueL = mtbdd_getTerminalValue(l);
         void *terminalValueR = mtbdd_getTerminalValue(r);
         mtbdd_terminal_type terminalTypeL = mtbdd_get_terminal_type(l);
         mtbdd_terminal_type terminalTypeR = mtbdd_get_terminal_type(r);
-        if (terminalTypeL != terminalTypeR) {
-         printf("Mismatch of terminal types in APPLY.\n"); // TODO CUSTOM ERROR
-         bdd_error(BDD_ILLBDD);
+
+        mtbdd_terminal_type decidingTerminalType;
+
+        if (l == bdd_false()) decidingTerminalType = terminalTypeR;
+        else decidingTerminalType = terminalTypeL;
+
+        if (terminalTypeL != terminalTypeR
+            && r != bdd_false() && l != bdd_false()) {
+         printf("Mismatch of terminal types in APPLY. %d-%d %d-%d\n", l, terminalTypeL, r, terminalTypeR); // TODO CUSTOM ERROR
         }
         void *resultValue = op(terminalValueL,terminalValueR );
         if (resultValue == NULL) {return bdd_false();}
-        mtbdd_terminal_compare_function_t cmp = CUSTOMCOMPARE(terminalTypeL);
-        mtbdd_terminal_free_function_t freeterminal = CUSTOMFREE(terminalTypeL);
+        mtbdd_terminal_compare_function_t cmp = CUSTOMCOMPARE(decidingTerminalType);
+        mtbdd_terminal_free_function_t freeterminal = CUSTOMFREE(decidingTerminalType);
         if (cmp == NULL) {
-         printf("Missing custom compare for type %d.\n", terminalTypeL);
+         printf("Missing custom compare for type %d.\n", decidingTerminalType);
          bdd_error(BDD_OP);
         }
         if (cmp(resultValue, terminalValueL)) {
@@ -390,7 +396,7 @@ BDD mtbdd_apply_rec(BDD l, BDD r, void*(*op)(void*, void*)) {
             free(resultValue);
           return r;
         }
-        res = (mtbdd_maketerminal(resultValue, terminalTypeL));
+        res = (mtbdd_maketerminal(resultValue, decidingTerminalType));
         if(!DOMAIN_NOT_SHORT){ // value will be directly in the node
             free(resultValue); // we don't need the allocated one
         }
@@ -465,7 +471,6 @@ BDD mtbdd_apply_guarded_rec(BDD l, BDD r, BDD(*op)(BDD, BDD)) {
       && entry->a == l && entry->b == r && entry->c == (int)(size_t)op){
       return entry->r.res;
    }
-
    if((ISTERMINAL(l) || ISZERO(l)) && (ISZERO(r) || ISTERMINAL(r))){
       res = op(l, r);
    }
@@ -508,7 +513,7 @@ BDD mtbdd_apply_guarded_param(BDD l, BDD r, BDD(*op)(BDD, BDD, size_t), size_t p
 
 BDD mtbdd_apply_guarded_param_rec(BDD l, BDD r, BDD(*op)(BDD, BDD, size_t), size_t param) {
    BddCacheData *entry;
-   BDD res = op(l,r, param);
+   BDD res = op(l,r,param);
    if (APPLY_RESULT_VALID) {
       return res;
    }
@@ -725,19 +730,24 @@ BDD mtbdd_apply_unary_guarded(BDD l, BDD(*op)(BDD, void*), size_t arg) {
  */
 BDD mtbdd_apply_unary_guarded_rec(BDD l, BDD(*op)(BDD, void*), size_t arg) {
 
+   BddCacheData *entry;
+
+   entry = BddCache_lookup(&mtbdd_cache_apply, TRIPLE(l, (int)(size_t)op, (int)arg));
+
+
+   if ( BddCache_is_valid(&mtbdd_cache_apply, entry) && 
+      entry->a == l && entry->b == (int)arg && entry->c == (int)(size_t)op) {
+
+      return entry->r.res;
+   }
+
+
    BDD res = op(l, arg);
 
    // terminal case signalised by user
    if (APPLY_RESULT_VALID) {
+      BddCache_store(entry, &mtbdd_cache_apply, l, (int)arg, (int)(size_t)op, res);
       return res;
-   }
-
-   BddCacheData *entry;
-
-   entry = BddCache_lookup(&mtbdd_cache_apply, TRIPLE(l, (int)(size_t)op, arg));
-   if ( BddCache_is_valid(&mtbdd_cache_apply, entry) && 
-      entry->a == l && entry->b == arg && entry->c == (int)(size_t)op) {
-      return entry->r.res;
    }
 
    // terminal case even if user signals invalid

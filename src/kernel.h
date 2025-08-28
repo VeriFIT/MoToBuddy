@@ -43,6 +43,7 @@
 #include <limits.h>
 #include <setjmp.h>
 #include "bdd.h"
+#include "terminal.h"
 
 /*=== SANITY CHECKS ====================================================*/
 

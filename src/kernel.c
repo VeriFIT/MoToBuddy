@@ -1038,19 +1038,23 @@ static void bdd_gbc_rehash(void)
    {
       register BddNode *node = &bddnodes[n];
 
-      if (LOWp(node) != -1)
-      {
-	 register unsigned int hash;
+      if (LOWp(node) != -1) {
+	      register unsigned int hash;
 
-	 hash = NODEHASH(LEVELp(node), LOWp(node), HIGHp(node));
-	 node->next = bddnodes[hash].hash;
-	 bddnodes[hash].hash = n;
-      }
-      else
-      {
-	 node->next = bddfreepos;
-	 bddfreepos = n;
-	 bddfreenum++;
+	      if(LEVELp(node) == MAXLEVEL && DOMAIN_NOT_SHORT) {
+            hash = mtbdd_terminal_hash_gbc(mtbdd_getvaluep(node), node->type);
+         } // when value in the table
+         else {
+            hash = NODEHASH(LEVELp(node), LOWp(node), HIGHp(node));
+         }
+
+         node->next = bddnodes[hash].hash;
+         bddnodes[hash].hash = n;
+         
+      } else {
+         node->next = bddfreepos;
+         bddfreepos = n;
+         bddfreenum++;
       }
    }
 }
@@ -1058,8 +1062,6 @@ static void bdd_gbc_rehash(void)
 
 void bdd_gbc(void)
 {
-   printf("gbc begun");
-   fflush(stdout);
    int *r;
    int n;
    long int c2, c1 = clock();
@@ -1075,13 +1077,16 @@ void bdd_gbc(void)
       gbc_handler(1, &s);
    }
    
-   for (r=bddrefstack ; r<bddrefstacktop ; r++)
+   for (r=bddrefstack ; r<bddrefstacktop ; r++) {
       bdd_mark(*r);
+   }
 
    for (n=0 ; n<bddnodesize ; n++)
    {
-      if (bddnodes[n].refcou > 0)
-	 bdd_mark(n);
+      if (bddnodes[n].refcou > 0) {
+	      bdd_mark(n);
+      }
+      
       bddnodes[n].hash = 0;
    }
    
@@ -1092,39 +1097,41 @@ void bdd_gbc(void)
    {
       register BddNode *node = &bddnodes[n];
 
-      if (((MARKEDp(node))  &&  LOWp(node) != -1) )
-      {
-	 register unsigned int hash;
+      if ((MARKEDp(node)) && (LOWp(node)) != -1) { // accessible from external root and valid
 
-	 UNMARKp(node);
-    if(LEVELp(node) == MAXLEVEL &&  DOMAIN_NOT_SHORT){
-      hash = mtbdd_terminal_hash_gbc(mtbdd_getvaluep(node), node->type);
-    } // when value in the table
-	 else {
-      hash = NODEHASH(LEVELp(node), LOWp(node), HIGHp(node));
-   }
-      node->next = bddnodes[hash].hash;
-      bddnodes[hash].hash = n;
-      }
-      else {
-         if(LEVELp(node) == MAXLEVEL) {
-            mtbdd_delete_terminal(node); // never called
-         } 
-         
-         LOWp(node) = -1;
-         
+         register unsigned int hash;
+         UNMARKp(node);
+
+         if(LEVELp(node) == MAXLEVEL && DOMAIN_NOT_SHORT) {
+            hash = mtbdd_terminal_hash_gbc(mtbdd_getvaluep(node), node->type);
+         } // when value in the table
+         else {
+            hash = NODEHASH(LEVELp(node), LOWp(node), HIGHp(node));
+         }
+
+         node->next = bddnodes[hash].hash;
+         bddnodes[hash].hash = n;
+
+      } else { // not marked or invalid
+
+         if (LEVELp(node) == MAXLEVEL) {
+            
+            mtbdd_delete_terminal(node);
+         }
+
+         LOWp(node) = -1; // mark as invalid
          
          node->next = bddfreepos;
          bddfreepos = n;
          bddfreenum++;
       }
    }
+
    if(mtbdd) {
       mtbdd_operator_reset();
    } else {
       bdd_operator_reset();
    }
-
 
    c2 = clock();
    gbcclock += c2-c1;
@@ -1204,8 +1211,11 @@ BDD bdd_delref(BDD root)
       return bdd_error(BDD_ILLBDD);
    }
    /* if the following line is present, fails there much earlier */ 
-   if (!HASREF(root)) bdd_error(BDD_BREAK); /* distinctive */
-   
+   if (!HASREF(root)){
+      printf("this has no ref: %d\n",root);
+       bdd_error(BDD_BREAK); /* distinctive */
+       //return root;
+   }
    DECREF(root);
    return root;
 }
@@ -1323,12 +1333,14 @@ int bdd_makenode(unsigned int level, int low, int high)
    register BddNode *node;
    register unsigned int hash;
    register int res;
+
 #ifdef CACHESTATS
    bddcachestats.uniqueAccess++;
 #endif
+
    hash = NODEHASH(level, low, high);
 
-   if(level != MAXLEVEL || !DOMAIN_NOT_SHORT){
+   if (level != MAXLEVEL || !DOMAIN_NOT_SHORT) {
       /* check whether childs are equal */
       if (checkSameChildren) {
          if (level != MAXLEVEL && low == high){
@@ -1346,7 +1358,7 @@ int bdd_makenode(unsigned int level, int low, int high)
 #ifdef CACHESTATS
 	 bddcachestats.uniqueHit++;
 #endif
-	 return res;
+	      return res;
       }
 
       res = bddnodes[res].next;
