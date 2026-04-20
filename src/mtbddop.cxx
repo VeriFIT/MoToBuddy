@@ -80,6 +80,9 @@ NodeOp mtbdd_traverse_to(int target_level, NodeOp action,
 NodeOp mtbdd_swap(int target_level, SwapParam paramL, SwapParam paramR) {
     return [=](BDD node) -> BDD {
         auto lockstep = [=](auto& self, BDD L, BDD R) -> BDDPair {
+            if ((ISTERMINAL(L) || ISCONST(L)) && (ISTERMINAL(R) || ISCONST(R)))
+                return { L, R };
+
             if (LEVEL(L) == target_level && LEVEL(R) == target_level) {
                 BDD offer_L = paramL.put_up(L);
                 BDD offer_R = paramR.put_up(R);
