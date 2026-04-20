@@ -80,33 +80,57 @@ NodeOp mtbdd_traverse_to(int target_level, NodeOp action,
 NodeOp mtbdd_swap(int target_level, SwapParam paramL, SwapParam paramR) {
     return [=](BDD node) -> BDD {
         auto lockstep = [=](auto& self, BDD L, BDD R) -> BDDPair {
-            if ((ISTERMINAL(L) || ISCONST(L)) && (ISTERMINAL(R) || ISCONST(R)))
-                return { L, R };
+            BDD working_L = L;
+            BDD working_R = R;
 
-            if (LEVEL(L) == target_level && LEVEL(R) == target_level) {
-                BDD offer_L = paramL.put_up(L);
-                BDD offer_R = paramR.put_up(R);
-                return { paramL.put_in(L, offer_R),
-                         paramR.put_in(R, offer_L) };
+            if (LEVEL(L) > target_level || ISCONST(L)) {
+                checkSameChildren = 0;
+                working_L = bdd_makenode(target_level, L, L);
+                checkSameChildren = 1;
             }
-            if (LEVEL(L) == LEVEL(R)) {
-                auto lo = self(self, LOW(L),  LOW(R));
-                auto hi = self(self, HIGH(L), HIGH(R));
-                return { bdd_makenode(LEVEL(L), lo.first,  hi.first),
-                         bdd_makenode(LEVEL(R), lo.second, hi.second) };
+
+            if (LEVEL(R) > target_level || ISCONST(R)) {
+                checkSameChildren = 0;
+                working_R = bdd_makenode(target_level, R, R);
+                checkSameChildren = 1;
             }
-            if (LEVEL(L) < LEVEL(R)) {
-                auto lo = self(self, LOW(L),  R);
-                auto hi = self(self, HIGH(L), R);
-                return { bdd_makenode(LEVEL(L), lo.first, hi.first), lo.second };
+
+            if (LEVEL(working_L) == target_level && LEVEL(working_R) == target_level) {
+                BDD offer_L = paramL.put_up(working_L);
+                BDD offer_R = paramR.put_up(working_R);
+                BDD res_L   = paramL.put_in(working_L, offer_R);
+                BDD res_R   = paramR.put_in(working_R, offer_L);
+                return { res_L, res_R };
             }
-            auto lo = self(self, L, LOW(R));
-            auto hi = self(self, L, HIGH(R));
-            return { lo.first, bdd_makenode(LEVEL(R), lo.second, hi.second) };
+
+            if (LEVEL(working_L) == LEVEL(working_R)) {
+                auto lo = self(self, LOW(working_L),  LOW(working_R));
+                auto hi = self(self, HIGH(working_L), HIGH(working_R));
+                BDD res_L = bdd_makenode(LEVEL(working_L), lo.first,  hi.first);
+                BDD res_R = bdd_makenode(LEVEL(working_R), lo.second, hi.second);
+                return { res_L, res_R };
+            }
+
+            if (LEVEL(working_L) < LEVEL(working_R)) {
+                auto lo = self(self, LOW(working_L),  working_R);
+                auto hi = self(self, HIGH(working_L), working_R);
+                BDD res_L = bdd_makenode(LEVEL(working_L), lo.first, hi.first);
+                BDD res_R = bdd_makenode(LEVEL(working_L), lo.second, hi.second);
+                return { res_L, res_R };
+            }
+
+            if (LEVEL(working_L) > LEVEL(working_R)) {
+                auto lo = self(self, working_L, LOW(working_R));
+                auto hi = self(self, working_L, HIGH(working_R));
+                BDD res_L = bdd_makenode(LEVEL(working_R), lo.first, hi.first);
+                BDD res_R = bdd_makenode(LEVEL(working_R), lo.second, hi.second);
+                return { res_L, res_R };
+            }
         };
 
         auto result = lockstep(lockstep, LOW(node), HIGH(node));
-        return bdd_makenode(LEVEL(node), result.first, result.second);
+        BDD final = bdd_makenode(LEVEL(node), result.first, result.second);
+        return final;
     };
 }
 
