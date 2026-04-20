@@ -27,6 +27,7 @@ set(HEADERS
   prime.h
   terminal.h
   mtbdd.h
+  mtbddop.h
 )
 
 set(SOURCES
@@ -44,6 +45,7 @@ set(SOURCES
  tree.c
  terminal.c
  mtbdd.c
+ mtbddop.cxx
 )
 
 # ============================================================================ #
@@ -61,7 +63,7 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
   LINKER_LANGUAGE CXX
   C_STANDARD 11
   C_STANDARD_REQUIRED ON
-  CXX_STANDARD 11
+  CXX_STANDARD 14
   CXX_STANDARD_REQUIRED ON
   CXX_VISIBILITY_PRESET default
 
