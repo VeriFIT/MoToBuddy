@@ -6,6 +6,7 @@
  */
 
 #include "mtbddop.h"
+#include <unordered_map>
 
 /* Primitives */
 
@@ -79,7 +80,34 @@ NodeOp mtbdd_traverse_to(int target_level, NodeOp action,
 
 NodeOp mtbdd_swap(int target_level, SwapParam paramL, SwapParam paramR) {
     return [=](BDD node) -> BDD {
-        auto lockstep = [=](auto& self, BDD L, BDD R) -> BDDPair {
+
+        // ---- local memo for this single top-level call ----
+        struct PairKey {
+            BDD L, R;
+            bool operator==(const PairKey& o) const {
+                return L == o.L && R == o.R;
+            }
+        };
+        struct PairKeyHash {
+            std::size_t operator()(const PairKey& k) const noexcept {
+                std::size_t h = std::hash<int>{}(k.L);
+                h ^= std::hash<int>{}(k.R) + 0x9e3779b9 + (h << 6) + (h >> 2);
+                return h;
+            }
+        };
+        std::unordered_map<PairKey, BDDPair, PairKeyHash> memo;
+
+        // ---- lockstep with memo ----
+        auto lockstep = [=, &memo](auto& self, BDD L, BDD R) -> BDDPair {
+
+            // cache lookup
+            PairKey key{L, R};
+            auto it = memo.find(key);
+            if (it != memo.end()) {
+                printf("cache hit\n");
+                return it->second;
+            }
+
             BDD working_L = L;
             BDD working_R = R;
 
@@ -95,42 +123,39 @@ NodeOp mtbdd_swap(int target_level, SwapParam paramL, SwapParam paramR) {
                 checkSameChildren = 1;
             }
 
+            BDDPair result;
+
             if (LEVEL(working_L) == target_level && LEVEL(working_R) == target_level) {
                 BDD offer_L = paramL.put_up(working_L);
                 BDD offer_R = paramR.put_up(working_R);
-                BDD res_L   = paramL.put_in(working_L, offer_R);
-                BDD res_R   = paramR.put_in(working_R, offer_L);
-                return { res_L, res_R };
+                result = { paramL.put_in(working_L, offer_R),
+                           paramR.put_in(working_R, offer_L) };
             }
-
-            if (LEVEL(working_L) == LEVEL(working_R)) {
+            else if (LEVEL(working_L) == LEVEL(working_R)) {
                 auto lo = self(self, LOW(working_L),  LOW(working_R));
                 auto hi = self(self, HIGH(working_L), HIGH(working_R));
-                BDD res_L = bdd_makenode(LEVEL(working_L), lo.first,  hi.first);
-                BDD res_R = bdd_makenode(LEVEL(working_R), lo.second, hi.second);
-                return { res_L, res_R };
+                result = { bdd_makenode(LEVEL(working_L), lo.first,  hi.first),
+                           bdd_makenode(LEVEL(working_R), lo.second, hi.second) };
             }
-
-            if (LEVEL(working_L) < LEVEL(working_R)) {
+            else if (LEVEL(working_L) < LEVEL(working_R)) {
                 auto lo = self(self, LOW(working_L),  working_R);
                 auto hi = self(self, HIGH(working_L), working_R);
-                BDD res_L = bdd_makenode(LEVEL(working_L), lo.first, hi.first);
-                BDD res_R = bdd_makenode(LEVEL(working_L), lo.second, hi.second);
-                return { res_L, res_R };
+                result = { bdd_makenode(LEVEL(working_L), lo.first,  hi.first),
+                           bdd_makenode(LEVEL(working_L), lo.second, hi.second) };
             }
-
-            if (LEVEL(working_L) > LEVEL(working_R)) {
+            else { // LEVEL(working_L) > LEVEL(working_R)
                 auto lo = self(self, working_L, LOW(working_R));
                 auto hi = self(self, working_L, HIGH(working_R));
-                BDD res_L = bdd_makenode(LEVEL(working_R), lo.first, hi.first);
-                BDD res_R = bdd_makenode(LEVEL(working_R), lo.second, hi.second);
-                return { res_L, res_R };
+                result = { bdd_makenode(LEVEL(working_R), lo.first,  hi.first),
+                           bdd_makenode(LEVEL(working_R), lo.second, hi.second) };
             }
+
+            memo.emplace(key, result);
+            return result;
         };
 
         auto result = lockstep(lockstep, LOW(node), HIGH(node));
-        BDD final = bdd_makenode(LEVEL(node), result.first, result.second);
-        return final;
+        return bdd_makenode(LEVEL(node), result.first, result.second);
     };
 }
 

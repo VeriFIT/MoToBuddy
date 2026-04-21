@@ -38,10 +38,9 @@ struct BDDPair { BDD first; BDD second; };
  * put_in: given the original node and received value, return rebuilt node.
  */
 struct SwapParam {
-    std::function<BDD(BDD)>      put_up;
-    std::function<BDD(BDD, BDD)> put_in;
+    BDD (*put_up)(BDD);
+    BDD (*put_in)(BDD, BDD);
 };
-
 /**
  * Controls which branches are followed during traversal or swap.
  * Used both as descent preference (pref) and action target (action_on).
@@ -55,6 +54,44 @@ enum class Branch {
 };
 
 enum class Side { L, R };
+
+/* Swap cache */
+
+struct SwapCacheKey {
+    int    target_level;
+    BDD  (*put_up_L)(BDD);
+    BDD  (*put_in_L)(BDD, BDD);
+    BDD  (*put_up_R)(BDD);
+    BDD  (*put_in_R)(BDD, BDD);
+    BDD    L;
+    BDD    R;
+    bool operator==(const SwapCacheKey& o) const {
+        return target_level == o.target_level
+            && put_up_L     == o.put_up_L
+            && put_in_L     == o.put_in_L
+            && put_up_R     == o.put_up_R
+            && put_in_R     == o.put_in_R
+            && L            == o.L
+            && R            == o.R;
+    }
+};
+
+struct SwapCacheKeyHash {
+    std::size_t operator()(const SwapCacheKey& k) const noexcept {
+        std::size_t h = 0;
+        auto mix = [&](std::size_t v) {
+            h ^= v + 0x9e3779b9 + (h << 6) + (h >> 2);
+        };
+        mix(std::hash<int>{}(k.target_level));
+        mix(std::hash<void*>{}((void*)k.put_up_L));
+        mix(std::hash<void*>{}((void*)k.put_in_L));
+        mix(std::hash<void*>{}((void*)k.put_up_R));
+        mix(std::hash<void*>{}((void*)k.put_in_R));
+        mix(std::hash<int>{}(k.L));
+        mix(std::hash<int>{}(k.R));
+        return h;
+    }
+};
 
 /* Primitives */
 
