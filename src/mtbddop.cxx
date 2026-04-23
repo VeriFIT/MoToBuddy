@@ -9,7 +9,7 @@
 
 #include <unordered_map>
 #include <algorithm>
-
+#include <memory>
 /* -------------------------------------------------------------------------
  * Primitives
  * ---------------------------------------------------------------------- */
@@ -28,8 +28,7 @@ NodeOp mtbdd_with_traverse_to(int target_level,
                               NodeOp action,
                               Branch pref,
                               Branch action_on) {
-    return [=](BDD root) -> BDD {
-        struct CacheKey {
+    struct CacheKey {
             BDD n;
             int parent_level;
 
@@ -44,13 +43,17 @@ NodeOp mtbdd_with_traverse_to(int target_level,
                 return h1 ^ (h2 << 1);
             }
         };
+    
+    auto memo = std::make_shared<std::unordered_map<CacheKey, BDD, CacheHash>>();
 
-        std::unordered_map<CacheKey, BDD, CacheHash> memo;
 
+    return [=](BDD root) -> BDD {
+
+        auto& m = *memo;
         auto traverse = [&](auto& self, BDD node, int parent_level) -> BDD {
             CacheKey key{node, parent_level};
-            auto it = memo.find(key);
-            if (it != memo.end()) return it->second;
+            auto it = m.find(key);
+            if (it != m.end()) return it->second;
 
             BDD working_node = node;
 
@@ -92,7 +95,7 @@ NodeOp mtbdd_with_traverse_to(int target_level,
                     res = action(working_node);
                 }
                 if (node != working_node) POPREF(1); // pop virtual node
-                memo[key] = res;
+                m[key] = res;
                 return res;
             }
 
@@ -128,7 +131,7 @@ NodeOp mtbdd_with_traverse_to(int target_level,
             }
 
             if (node != working_node) POPREF(1); // pop virtual node
-            memo[key] = res;
+            m[key] = res;
             return res;
         };
 
