@@ -16,6 +16,10 @@ void      (*customFree)(void *);
 
 #define NODEHASH(lvl,l,h) (TRIPLE(lvl,l,h) % bddnodesize)
 
+int mtbdd_init(int initnodesize, int cs) {
+   mtbdd = 1;
+   return bdd_init(initnodesize, cs);
+}
 
 
 /**
@@ -742,7 +746,7 @@ BDD mtbdd_apply_unary_guarded_rec(BDD l, BDD(*op)(BDD, void*), size_t arg) {
    }
 
 
-   BDD res = op(l, arg);
+   BDD res = op(l, (void*)arg);
 
    // terminal case signalised by user
    if (APPLY_RESULT_VALID) {

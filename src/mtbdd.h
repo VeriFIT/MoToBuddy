@@ -60,6 +60,8 @@ extern unsigned (*customHash)(void *);
 extern int (*customCompare)(void *, void *);
 extern void (*customFree)(void *);
 
+int mtbdd_init(int initnodesize, int cs);
+
 int mtbdd_findterminal(void *value, unsigned hash, mtbdd_terminal_type type);
 int mtbdd_maketerminal(void *value, mtbdd_terminal_type type);
 int mtbdd_insertvalue(void *value);
