@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include <algorithm>
 #include <memory>
+#include "prime.h"
 /* -------------------------------------------------------------------------
  * Primitives
  * ---------------------------------------------------------------------- */
@@ -28,58 +29,44 @@ NodeOp mtbdd_with_traverse_to(int target_level,
                               NodeOp action,
                               Branch pref,
                               Branch action_on) {
-    struct CacheKey {
-            BDD n;
-            int parent_level;
 
-            bool operator==(const CacheKey& o) const {
-                return n == o.n && parent_level == o.parent_level;
-            }
-        };
-        struct CacheHash {
-            std::size_t operator()(const CacheKey& k) const {
-                std::size_t h1 = std::hash<int>{}(k.n);
-                std::size_t h2 = std::hash<int>{}(k.parent_level);
-                return h1 ^ (h2 << 1);
-            }
-        };
-    
-    auto memo = std::make_shared<std::unordered_map<CacheKey, BDD, CacheHash>>();
-
+    auto cache = std::make_shared<BddCache>();
+    BddCache_init(cache.get(), 2000);
 
     return [=](BDD root) -> BDD {
 
-        auto& m = *memo;
+        BddCache* c = cache.get();
+
         auto traverse = [&](auto& self, BDD node, int parent_level) -> BDD {
-            CacheKey key{node, parent_level};
-            auto it = m.find(key);
-            if (it != m.end()) return it->second;
+
+            // --- Cache lookup ---
+            int hash = PAIR(node, parent_level);
+            BddCacheData* entry = BddCache_lookup(c, hash);
+            if (BddCache_is_valid(c, entry)
+                && entry->a == (int)node
+                && entry->b == parent_level
+                && entry->c == target_level) {
+                return (BDD)entry->r.res;
+            }
 
             BDD working_node = node;
 
-            // Virtualize if we are past the target level or at terminal.
-            // The virtual node is freshly allocated so protect it immediately
-            // before any further call that could trigger GC.
-            if (LEVEL(node) > target_level || ISCONST(node)) {
+            if (LEVEL(node) > (unsigned)target_level || ISCONST(node)) {
                 checkSameChildren = 0;
                 if (pref == Branch::LR || pref == Branch::RL) {
-                    // Both paths taken -- virtualize directly at target_level
                     working_node = bdd_makenode(target_level, node, node);
                 } else {
-                    // Single path -- virtualize one level at a time
                     working_node = bdd_makenode(parent_level + 1, node, node);
                 }
                 checkSameChildren = 1;
-                PUSHREF(working_node);  // protect virtual node from GC
+                PUSHREF(working_node);
             }
 
             BDD res;
 
-            // Action at the target level
+            // --- Action at target level ---
             if ((int)LEVEL(working_node) == target_level) {
                 if (action_on == Branch::L) {
-                    // action() may allocate; result is fed straight into makenode
-                    // so protect it before makenode reads it
                     PUSHREF(action(LOW(working_node)));
                     res = bdd_makenode(LEVEL(working_node),
                                        READREF(1),
@@ -94,15 +81,12 @@ NodeOp mtbdd_with_traverse_to(int target_level,
                 } else { // Branch::ITSELF
                     res = action(working_node);
                 }
-                if (node != working_node) POPREF(1); // pop virtual node
-                m[key] = res;
+                if (node != working_node) POPREF(1);
+                BddCache_store4(entry, c, (int)node, parent_level, target_level, -1, (int)res);
                 return res;
             }
 
-            // Descent and reconstruction (bottom up).
-            // For Branch::L and Branch::R only one child is computed
-            // recursively; the other is a live child pointer of an existing
-            // node and needs no protection.
+            // --- Descent ---
             if (pref == Branch::R) {
                 PUSHREF(self(self, HIGH(working_node), (int)LEVEL(working_node)));
                 res = bdd_makenode(LEVEL(working_node),
@@ -116,22 +100,19 @@ NodeOp mtbdd_with_traverse_to(int target_level,
                                    HIGH(working_node));
                 POPREF(1);
             } else if (pref == Branch::RL) {
-                // Compute HIGH first, then LOW.
-                // HIGH result must be protected before the LOW recursion runs.
                 PUSHREF(self(self, HIGH(working_node), (int)LEVEL(working_node)));
                 PUSHREF(self(self, LOW(working_node),  (int)LEVEL(working_node)));
                 res = bdd_makenode(LEVEL(working_node), READREF(1), READREF(2));
                 POPREF(2);
             } else { // Branch::LR
-                // Compute LOW first, then HIGH.
                 PUSHREF(self(self, LOW(working_node),  (int)LEVEL(working_node)));
                 PUSHREF(self(self, HIGH(working_node), (int)LEVEL(working_node)));
                 res = bdd_makenode(LEVEL(working_node), READREF(2), READREF(1));
                 POPREF(2);
             }
 
-            if (node != working_node) POPREF(1); // pop virtual node
-            m[key] = res;
+            if (node != working_node) POPREF(1);
+            BddCache_store4(entry, c, (int)node, parent_level, target_level, -1, (int)res);
             return res;
         };
 
