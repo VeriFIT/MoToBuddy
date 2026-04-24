@@ -1,0 +1,27 @@
+{
+  "mosf_version": "1.0",
+  "x_gate_name": "H",
+  "tree": "tree_id",
+
+  "vars": { "q": 1 },
+
+  "ops": [
+    {
+      "type":   "traverse_to",
+      "target": { "var": "q" },
+      "action": {
+        "type": "makenode",
+        "low": {
+          "type": "plus_s",
+          "low":  { "type": "get_side", "side": "L" },
+          "high": { "type": "get_side", "side": "R" }
+        },
+        "high": {
+          "type": "minus_s",
+          "low":  { "type": "get_side", "side": "L" },
+          "high": { "type": "get_side", "side": "R" }
+        }
+      }
+    }
+  ]
+}

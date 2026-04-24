@@ -1,0 +1,38 @@
+#!/bin/tcsh -f
+
+echo "--- CX gate: 8 letters, c=0 t=1 ---" >> result
+./quantum_gates 8 cx 0 1 >> result
+if ($status != 0) then
+    echo "FAIL: cx c=0 t=1" >> result
+    exit 1
+endif
+
+echo "--- CX gate: 8 letters, c=1 t=0 ---" >> result
+./quantum_gates 8 cx 1 0 >> result
+if ($status != 0) then
+    echo "FAIL: cx c=1 t=0" >> result
+    exit 1
+endif
+
+echo "--- CCX gate: 8 letters, c1=0 c2=1 t=2 ---" >> result
+./quantum_gates 8 ccx 0 1 2 >> result
+if ($status != 0) then
+    echo "FAIL: ccx c1=0 c2=1 t=2" >> result
+    exit 1
+endif
+
+echo "--- MOSF gate: h.mosf ---" >> result
+./quantum_gates 16 h.mosf >> result
+if ($status != 0) then
+    echo "FAIL: mosf" >> result
+    exit 1
+endif
+
+echo "--- MOSF gate: ccx.mosf ---" >> result
+./quantum_gates 16 ccx.mosf >> result
+if ($status != 0) then
+    echo "FAIL: mosf" >> result
+    exit 1
+endif
+
+echo "All tests passed." >> result

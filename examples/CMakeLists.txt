@@ -10,7 +10,7 @@ add_subdirectory(fdd)
 add_subdirectory(milner)
 add_subdirectory(money)
 add_subdirectory(queen)
-
+add_subdirectory(quantum_gates)
 if(NOT WIN32)
 add_subdirectory(solitare)
 endif()

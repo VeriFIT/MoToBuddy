@@ -35,6 +35,26 @@ message(STATUS "  | Build Examples:          ${BUDDY_EXAMPLES}")
 message(STATUS "")
 
 # ============================================================================ #
+# External dependencies
+# ============================================================================ #
+
+include(FetchContent)
+
+FetchContent_Declare(
+    nlohmann_json_dl
+    URL          https://github.com/nlohmann/json/releases/download/v3.11.3/json.hpp
+    DOWNLOAD_NO_EXTRACT TRUE
+    DOWNLOAD_DIR ${CMAKE_BINARY_DIR}/include/nlohmann
+)
+FetchContent_MakeAvailable(nlohmann_json_dl)
+
+add_library(nlohmann_json_iface INTERFACE)
+add_library(nlohmann_json::nlohmann_json ALIAS nlohmann_json_iface)
+target_include_directories(nlohmann_json_iface INTERFACE
+    $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/include>
+)
+
+# ============================================================================ #
 # Library Source
 # ============================================================================ #
 add_subdirectory(src)

@@ -1,0 +1,31 @@
+{
+  "mosf_version": "1.0",
+  "tree": "tree_id",
+
+  "vars": { "c1": 1, "c2": 2, "t": 3 },
+
+  "ops": [
+    {
+      "type":   "group",
+      "name":   "ccx_loop",
+      "repeat": 3,
+      "ops": [
+        {
+          "type":      "traverse_to",
+          "target":    { "var": "c1" },
+          "action_on": "R",
+          "action": {
+            "type":      "traverse_to",
+            "target":    { "var": "c2" },
+            "action_on": "R",
+            "action": {
+              "type":   "traverse_to",
+              "target": { "var": "t" },
+              "action": { "type": "swap" }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

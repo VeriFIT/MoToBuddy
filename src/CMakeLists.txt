@@ -28,6 +28,7 @@ set(HEADERS
   terminal.h
   mtbdd.h
   mtbddop.h
+  mosf_parser.h
 )
 
 set(SOURCES
@@ -73,6 +74,7 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
   # Project Information
   VERSION ${PROJECT_VERSION}
 )
+target_link_libraries(buddy        PUBLIC  nlohmann_json::nlohmann_json)
 
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_11)
 
