@@ -46,7 +46,7 @@ NodeOp mtbdd_with_traverse_to(int target_level,
                 && entry->a == (int)node
                 && entry->b == parent_level
                 && entry->c == target_level
-                && entry->d == -) {
+                && entry->d == -1) {
                 return (BDD)entry->r.res;
             }
 
