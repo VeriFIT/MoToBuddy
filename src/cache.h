@@ -85,7 +85,14 @@ extern void BddCache_reset(BddCache *);
     ((entry)->r.res = ress), \
     ((entry)->generation = (cache)->current_generation))
 
-
+#define BddCache_store_pair(entry, cache, as, bs, cs, ds, res1, res2) \
+   (((entry)->a = as), \
+    ((entry)->b = bs), \
+    ((entry)->c = cs), \
+    ((entry)->d = ds), \
+    ((entry)->r.res = res1), \
+    ((entry)->r2 = res2), \
+    ((entry)->generation = (cache)->current_generation))
 #endif /* _CACHE_H */
 
 

@@ -52,7 +52,7 @@ NodeOp mtbdd_with_traverse_to(int target_level,
                               Branch pref,
                               Branch action_on) {
 
-    auto managed = std::make_shared<OwnedCache>(4096);
+    auto managed = std::make_shared<OwnedCache>(1000003);
 
     return [=](BDD root) -> BDD {
 
@@ -159,7 +159,7 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
                                     Branch pref_R,
                                     Branch action_on_R) {
 
-    auto managed = std::make_shared<OwnedCache>(4096);
+    auto managed = std::make_shared<OwnedCache>(1000003);
 
     std::function<BDDPair(BDD, BDD)> fn =
         [=](BDD L_root, BDD R_root) -> BDDPair {
@@ -317,8 +317,7 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
             if (virt_L) POPREF(1);
 
             entry = BddCache_lookup(c, hash);
-            BddCache_store4(entry, c, L, R, parent_lv_L, parent_lv_R, res.first);
-            entry->r2 = res.second;
+            BddCache_store_pair(entry, c, L, R, parent_lv_L, parent_lv_R, res.first, res.second);
 
             return res;
         };
