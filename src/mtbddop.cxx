@@ -12,18 +12,27 @@
 #include <memory>
 #include "prime.h"
 #include "mtbdd_cache_registry.h"
+
 struct OwnedCache {
     BddCache cache;
+    bool registered = false;
 
     explicit OwnedCache(int size) {
         BddCache_init(&cache, size);
+        MtbddCache_registry_register(&cache);
+        registered = true;
     }
     ~OwnedCache() {
+        if (registered) {
+            MtbddCache_registry_unregister(&cache);
+            registered = false;
+        }
         BddCache_done(&cache);
     }
-    OwnedCache(const OwnedCache&)            = delete;
+    OwnedCache(const OwnedCache&)             = delete;
     OwnedCache& operator=(const OwnedCache&) = delete;
 };
+
 /* -------------------------------------------------------------------------
  * Primitives
  * ---------------------------------------------------------------------- */
@@ -48,8 +57,7 @@ NodeOp mtbdd_with_traverse_to(int target_level,
     return [=](BDD root) -> BDD {
 
         BddCache* c = &managed->cache;
-        MtbddCache_registry_register(c);
-        BddCache_reset(c);  
+        BddCache_reset(c);
         auto traverse = [&](auto& self, BDD node, int parent_level) -> BDD {
 
             // --- Cache lookup ---
@@ -136,12 +144,9 @@ NodeOp mtbdd_with_traverse_to(int target_level,
                          ? bdd_varnum()
                          : (int)LEVEL(root);
         BDD res = traverse(traverse, root, root_level - 1);
-        MtbddCache_registry_unregister(c); 
         return res;
     };
-
 }
-
 
 /* -------------------------------------------------------------------------
  * Lockstep over two trees
@@ -161,7 +166,6 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
 
         BddCache* c = &managed->cache;
 
-        MtbddCache_registry_register(c);
         BddCache_reset(c);
 
         auto virt_node = [&](BDD node, int parent_lv, Branch pref) -> BDD {
@@ -220,8 +224,8 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
                               : (action_on_L == Branch::R) ? HIGH(wL)
                               : wL;
                     BDD in_R = (action_on_R == Branch::L) ? LOW(wR)
-                              : (action_on_R == Branch::R) ? HIGH(wR)
-                              : wR;
+                            : (action_on_R == Branch::R) ? HIGH(wR)
+                            : wR;
 
                     auto out_pair = action(in_L, in_R);
                     PUSHREF(out_pair.first);
@@ -324,10 +328,9 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
                    ? bdd_varnum() : (int)LEVEL(n);
         };
         BDDPair res  = lockstep(lockstep,
-                        L_root, R_root,
-                        root_level(L_root) - 1,
-                        root_level(R_root) - 1);
-        MtbddCache_registry_unregister(c);
+                                L_root, R_root,
+                                root_level(L_root) - 1,
+                                root_level(R_root) - 1);
         return res;
     };
 
