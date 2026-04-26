@@ -251,6 +251,7 @@ void mtbdd_operator_reset(void)
    BddCache_reset(&mtbdd_cache_apply);
    BddCache_reset(&mtbdd_cache_ite);
    BddCache_reset(&mtbdd_cache_operation);
+   MtbddCache_registry_reset_all();
 }
 
 void bdd_operator_reset(void)
@@ -264,7 +265,6 @@ void bdd_operator_reset(void)
    BddCache_reset(&mtbdd_cache_apply);
    BddCache_reset(&mtbdd_cache_ite);
    BddCache_reset(&mtbdd_cache_operation);
-   MtbddCache_registry_reset_all();
    mtbdd_operator_reset();
 }
 
