@@ -11,6 +11,19 @@
 #include <algorithm>
 #include <memory>
 #include "prime.h"
+#include "mtbdd_cache_registry.h"
+struct OwnedCache {
+    BddCache cache;
+
+    explicit OwnedCache(int size) {
+        BddCache_init(&cache, size);
+    }
+    ~OwnedCache() {
+        BddCache_done(&cache);
+    }
+    OwnedCache(const OwnedCache&)            = delete;
+    OwnedCache& operator=(const OwnedCache&) = delete;
+};
 /* -------------------------------------------------------------------------
  * Primitives
  * ---------------------------------------------------------------------- */
@@ -30,13 +43,13 @@ NodeOp mtbdd_with_traverse_to(int target_level,
                               Branch pref,
                               Branch action_on) {
 
-    auto cache = std::make_shared<BddCache>();
-    BddCache_init(cache.get(), 2000);
+    auto managed = std::make_shared<OwnedCache>(4096);
 
     return [=](BDD root) -> BDD {
 
-        BddCache* c = cache.get();
-
+        BddCache* c = &managed->cache;
+        MtbddCache_registry_register(c);
+        BddCache_reset(c);  
         auto traverse = [&](auto& self, BDD node, int parent_level) -> BDD {
 
             // --- Cache lookup ---
@@ -122,8 +135,11 @@ NodeOp mtbdd_with_traverse_to(int target_level,
         int root_level = (ISTERMINAL(root) || ISCONST(root))
                          ? bdd_varnum()
                          : (int)LEVEL(root);
-        return traverse(traverse, root, root_level - 1);
+        BDD res = traverse(traverse, root, root_level - 1);
+        MtbddCache_registry_unregister(c); 
+        return res;
     };
+
 }
 
 
@@ -137,39 +153,20 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
                                     Branch action_on_L,
                                     Branch pref_R,
                                     Branch action_on_R) {
+
+    auto managed = std::make_shared<OwnedCache>(4096);
+
     std::function<BDDPair(BDD, BDD)> fn =
         [=](BDD L_root, BDD R_root) -> BDDPair {
 
-        struct PairKey {
-            BDD L, R;
-            int parent_lv_L, parent_lv_R;
+        BddCache* c = &managed->cache;
 
-            bool operator==(const PairKey& o) const {
-                return L == o.L && R == o.R
-                    && parent_lv_L == o.parent_lv_L
-                    && parent_lv_R == o.parent_lv_R;
-            }
-        };
-        struct PairHash {
-            std::size_t operator()(const PairKey& k) const {
-                std::size_t h = std::hash<int>{}(k.L);
-                auto mix = [&](int v) {
-                    std::size_t hv = std::hash<int>{}(v);
-                    h ^= hv + 0x9e3779b9 + (h << 6) + (h >> 2);
-                };
-                mix(k.R);
-                mix(k.parent_lv_L);
-                mix(k.parent_lv_R);
-                return h;
-            }
-        };
-
-        std::unordered_map<PairKey, BDDPair, PairHash> memo;
+        MtbddCache_registry_register(c);
+        BddCache_reset(c);
 
         auto virt_node = [&](BDD node, int parent_lv, Branch pref) -> BDD {
-            if (!ISCONST(node) && (int)LEVEL(node) <= target_level) {
+            if (!ISCONST(node) && (int)LEVEL(node) <= target_level)
                 return node;
-            }
             int virt_lv = (pref == Branch::LR || pref == Branch::RL)
                           ? target_level
                           : parent_lv + 1;
@@ -183,11 +180,19 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
                             BDD L, BDD R,
                             int parent_lv_L,
                             int parent_lv_R) -> BDDPair {
-            PairKey key{L, R, parent_lv_L, parent_lv_R};
-            auto it = memo.find(key);
-            if (it != memo.end()) return it->second;
 
-            // Virtualize L if needed and protect the fresh node immediately
+            // --- Cache lookup ---
+            int hash = PAIR(PAIR(L, R), PAIR(parent_lv_L, parent_lv_R));
+            BddCacheData* entry = BddCache_lookup(c, hash);
+            if (BddCache_is_valid(c, entry)
+                && entry->a == L
+                && entry->b == R
+                && entry->c == parent_lv_L
+                && entry->d == parent_lv_R) {
+                return { (BDD)entry->r.res, (BDD)entry->r2 };
+            }
+
+            // --- Virtualize ---
             BDD wL = ((int)LEVEL(L) > target_level)
                      ? virt_node(L, parent_lv_L, pref_L)
                      : L;
@@ -219,12 +224,8 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
                               : wR;
 
                     auto out_pair = action(in_L, in_R);
-                    BDD out_L = out_pair.first;
-                    BDD out_R = out_pair.second;
-
-                    // Protect action outputs before the second makenode call
-                    PUSHREF(out_L);
-                    PUSHREF(out_R);
+                    PUSHREF(out_pair.first);
+                    PUSHREF(out_pair.second);
 
                     BDD new_wL = wL;
                     BDD new_wR = wR;
@@ -311,23 +312,23 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
             if (virt_R) POPREF(1);
             if (virt_L) POPREF(1);
 
-            memo[key] = res;
+            entry = BddCache_lookup(c, hash);
+            BddCache_store4(entry, c, L, R, parent_lv_L, parent_lv_R, res.first);
+            entry->r2 = res.second;
+
             return res;
         };
 
         auto root_level = [](BDD n) -> int {
             return (ISTERMINAL(n) || ISCONST(n))
-                   ? bdd_varnum()
-                   : (int)LEVEL(n);
+                   ? bdd_varnum() : (int)LEVEL(n);
         };
-
-        int start_parent_lv_L = root_level(L_root) - 1;
-        int start_parent_lv_R = root_level(R_root) - 1;
-
-        return lockstep(lockstep,
+        BDDPair res  = lockstep(lockstep,
                         L_root, R_root,
-                        start_parent_lv_L,
-                        start_parent_lv_R);
+                        root_level(L_root) - 1,
+                        root_level(R_root) - 1);
+        MtbddCache_registry_unregister(c);
+        return res;
     };
 
     return fn;

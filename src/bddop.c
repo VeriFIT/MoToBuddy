@@ -42,7 +42,7 @@
 
 #include "kernel.h"
 #include "cache.h"
-
+#include "mtbdd_cache_registry.h"
    /* Hash value modifiers to distinguish between entries in misccache */
 #define CACHEID_CONSTRAIN   0x0
 #define CACHEID_RESTRICT    0x1
@@ -264,6 +264,7 @@ void bdd_operator_reset(void)
    BddCache_reset(&mtbdd_cache_apply);
    BddCache_reset(&mtbdd_cache_ite);
    BddCache_reset(&mtbdd_cache_operation);
+   MtbddCache_registry_reset_all();
    mtbdd_operator_reset();
 }
 
@@ -291,6 +292,7 @@ static void mtbdd_operator_noderesize(void)
       BddCache_resize(&mtbdd_cache_apply, newcachesize);
       BddCache_resize(&mtbdd_cache_ite, newcachesize);
       BddCache_resize(&mtbdd_cache_operation, newcachesize);
+      MtbddCache_registry_resize_all(newcachesize);
    }
 }
 

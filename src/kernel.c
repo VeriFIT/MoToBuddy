@@ -50,6 +50,7 @@
 #include "cache.h"
 #include "prime.h"
 #include "mtbdd.h"
+#include "mtbdd_cache_registry.h"
 
 /*************************************************************************
   Various definitions and global variables

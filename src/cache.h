@@ -45,6 +45,7 @@ typedef struct
       double dres;
       int res;
    } r;
+   int r2;
    int a,b,c,d;
    int generation;
 } BddCacheData;
