@@ -45,7 +45,8 @@ NodeOp mtbdd_with_traverse_to(int target_level,
             if (BddCache_is_valid(c, entry)
                 && entry->a == (int)node
                 && entry->b == parent_level
-                && entry->c == target_level) {
+                && entry->c == target_level
+                && entry->d == -) {
                 return (BDD)entry->r.res;
             }
 
@@ -82,6 +83,7 @@ NodeOp mtbdd_with_traverse_to(int target_level,
                     res = action(working_node);
                 }
                 if (node != working_node) POPREF(1);
+                entry = BddCache_lookup(c, hash);
                 BddCache_store4(entry, c, (int)node, parent_level, target_level, -1, (int)res);
                 return res;
             }
@@ -112,6 +114,7 @@ NodeOp mtbdd_with_traverse_to(int target_level,
             }
 
             if (node != working_node) POPREF(1);
+            entry = BddCache_lookup(c, hash);
             BddCache_store4(entry, c, (int)node, parent_level, target_level, -1, (int)res);
             return res;
         };
@@ -122,6 +125,7 @@ NodeOp mtbdd_with_traverse_to(int target_level,
         return traverse(traverse, root, root_level - 1);
     };
 }
+
 
 /* -------------------------------------------------------------------------
  * Lockstep over two trees
