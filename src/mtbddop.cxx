@@ -53,16 +53,17 @@ NodeOp mtbdd_with_traverse_to(int target_level,
                               Branch action_on) {
 
 
-    BddCache *c = (BddCache *)malloc(sizeof(BddCache));
 
-    if (!c) {
-        bdd_error(BDD_MEMORY);
-    }
-
-    BddCache_init(c, mtbdd_cache_operation.tablesize / 8); // smaller should suffice
-    MtbddCache_registry_register(c);
 
     return [=](BDD root) -> BDD {
+        BddCache *c = (BddCache *)malloc(sizeof(BddCache));
+
+        if (!c) {
+            bdd_error(BDD_MEMORY);
+        }
+
+        BddCache_init(c, mtbdd_cache_operation.tablesize / 8); // smaller should suffice
+        MtbddCache_registry_register(c);
 
         auto traverse = [&](auto& self, BDD node, int parent_level) -> BDD {
 
@@ -169,18 +170,18 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
                                     Branch pref_R,
                                     Branch action_on_R) {
 
-    //auto managed = std::make_shared<OwnedCache>(1000003);
-    BddCache *c = (BddCache *)malloc(sizeof(BddCache));
-
-    if (!c) {
-        bdd_error(BDD_MEMORY);
-    }
-
-    BddCache_init(c, mtbdd_cache_operation.tablesize / 8); // smaller should suffice
-    MtbddCache_registry_register(c);   
-
     std::function<BDDPair(BDD, BDD)> fn =
         [=](BDD L_root, BDD R_root) -> BDDPair {
+
+        //auto managed = std::make_shared<OwnedCache>(1000003);
+        BddCache *c = (BddCache *)malloc(sizeof(BddCache));
+
+        if (!c) {
+            bdd_error(BDD_MEMORY);
+        }
+
+        BddCache_init(c, mtbdd_cache_operation.tablesize / 8); // smaller should suffice
+        MtbddCache_registry_register(c);   
 
         auto virt_node = [&](BDD node, int parent_lv, Branch pref) -> BDD {
             if (!ISCONST(node) && (int)LEVEL(node) <= target_level)
@@ -344,12 +345,11 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
                                 L_root, R_root,
                                 root_level(L_root) - 1,
                                 root_level(R_root) - 1);
+        MtbddCache_registry_unregister(c);
+        BddCache_done(c);
+        free(c);
         return res;
     };
-
-    MtbddCache_registry_unregister(c);
-    BddCache_done(c);
-    free(c);
 
     return fn;
 }
