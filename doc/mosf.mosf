@@ -1,0 +1,541 @@
+# MTBDD Operation Serialization Format (MOSF)
+# Version 1.0
+#
+# This document defines the JSON serialization format for MTBDD tree
+# transformation operations built on top of the mtbddop.h combinator API.
+# A conforming parser reconstructs a runnable NodeOp or BinaryNodeOp from
+# a JSON file, ready to be applied to an MTBDD tree.
+#
+# -----------------------------------------------------------------------------
+# BACKGROUND
+# -----------------------------------------------------------------------------
+#
+# The underlying C++ API (mtbddop.h) provides four building blocks:
+#
+#   NodeOp       = std::function<BDD(BDD)>
+#   BinaryNodeOp = std::function<BDDPair(BDD, BDD)>
+#   SwapParam    = { put_up: BDD(BDD), put_in: BDD(BDD, BDD) }
+#   Branch       = L | R | LR | RL | ITSELF
+#
+# Every JSON "op" node serializes exactly one of these building blocks.
+# The "type" field identifies which combinator or primitive is described.
+# Nested ops compose exactly as nested C++ lambdas do.
+#
+# -----------------------------------------------------------------------------
+# TOP-LEVEL STRUCTURE
+# -----------------------------------------------------------------------------
+#
+# Every MOSF file is a single JSON object with the following fields:
+#
+# {
+#   "mosf_version": "1.0",          // required -- format version
+#   "tree":         <string>,       // required -- identifier of the MTBDD to
+#                                   //            operate on (resolved by host)
+#   "vars":         { <name>: <int>, ... },
+#                                   // optional -- maps symbolic level names
+#                                   //            (e.g. "t", "c") to concrete
+#                                   //            integer BDD levels.
+#                                   //            Allows target fields to use
+#                                   //            { "var": "<name>" } instead
+#                                   //            of { "level": <int> }.
+#   "defs":         { <name>: <SwapParam>, ... },
+#                                   // optional -- named SwapParam definitions
+#                                   //            for reuse via { "$ref": name }
+#   "ops":          [ <Entry>, ... ] // required -- ordered sequence of ops and
+#                                   //             groups; dispensed on demand
+#                                   //             via MOSFFile::next()
+# }
+#
+# Keys prefixed with "x_" are reserved for host-application metadata
+# (e.g. "x_gate_name", "x_author"). Parsers MUST ignore unknown "x_" keys.
+#
+# -----------------------------------------------------------------------------
+# TARGET LEVELS
+# -----------------------------------------------------------------------------
+#
+# Wherever a target level is required, use exactly one of:
+#
+#   { "level": <int> }    -- direct integer BDD level
+#   { "var":   <name> }   -- symbolic name resolved from the "vars" map
+#
+# -----------------------------------------------------------------------------
+# BRANCH VALUES
+# -----------------------------------------------------------------------------
+#
+# Branch controls traversal direction or action target. Valid string values:
+#
+#   "L"      -- LOW  branch only (HIGH is passed through unchanged)
+#   "R"      -- HIGH branch only (LOW  is passed through unchanged)
+#   "LR"     -- both branches, LOW  first  (default for all "pref*" fields)
+#   "RL"     -- both branches, HIGH first
+#   "ITSELF" -- pass the node itself to the action (default for all
+#               "action_on*" fields)
+#
+# -----------------------------------------------------------------------------
+# ENTRIES  (elements of "ops" arrays)
+# -----------------------------------------------------------------------------
+#
+# Each element of an "ops" array is either a plain Op entry or a group entry.
+#
+#   Plain Op entry:
+#     Any Op node (see OP NODES below) with an optional top-level "repeat"
+#     field. "repeat" is a symbolic annotation -- the op is dispensed once
+#     per call to next() / next_unrolled() and the caller receives the count
+#     via Event::op_repeat.
+#
+#     {
+#       "type":   <op-type>,    // required -- determines the Op
+#       "repeat": <int>,        // optional -- symbolic repeat count (default 1)
+#       ...                     // op-specific fields
+#     }
+#
+#   Group entry:
+#     A sequencing construct that wraps a sub-sequence of entries. The body
+#     is executed exactly once regardless of "repeat" in the symbolic model;
+#     the count is surfaced via GROUP_BEGIN / GROUP_END events so the caller
+#     can decide what repetition means (unrolling, matrix power, etc.).
+#     Groups may nest arbitrarily. "group" is NOT a valid op type inside
+#     action / put_up / put_in / low / high fields -- only inside "ops" arrays.
+#
+#     {
+#       "type":   "group",         // required
+#       "name":   <string>,        // optional -- identifier for the group
+#       "repeat": <int>,           // optional -- symbolic repeat count (default 1)
+#       "ops":    [ <Entry>, ... ] // required -- the body sequence
+#     }
+#
+# -----------------------------------------------------------------------------
+# OP NODES  (the "type" field determines which op is described)
+# -----------------------------------------------------------------------------
+#
+# Every Op is a JSON object with a mandatory "type" field.
+# Op nodes are divided into two categories by their return type:
+#
+#   NodeOp       -- takes one BDD,  returns one BDD
+#   BinaryNodeOp -- takes two BDDs, returns a BDDPair (two BDDs)
+#
+# The category determines how a parent op consumes the result. See DISPATCH
+# RULES below for how the parser determines category from the JSON.
+#
+# --- NodeOp types ------------------------------------------------------------
+#
+# 1. get_side
+#    Primitive. Extracts one child of the current node.
+#    Maps to: mtbdd_get_side(Side)
+#
+#    {
+#      "type": "get_side",
+#      "side": "L" | "R"          // required
+#    }
+#
+# 2. received
+#    Context-only primitive. Refers to the value received from the opposite
+#    side during a swap. Only valid inside a SwapParam's "put_in" field.
+#    Inside "put_in", the parser wraps extension NodeOps and built-in
+#    NodeOps to absorb the "received" argument (it is passed as the second
+#    BDD argument of the put_in signature but ignored by those ops).
+#
+#    { "type": "received" }
+#
+# 3. makenode
+#    Rebuilds a BDD node at the current level with new children.
+#    Maps to: bdd_makenode(LEVEL(node), eval(low), eval(high))
+#
+#    Each of "low" and "high" accepts EITHER a NodeOp OR a BinaryNodeOp:
+#
+#      NodeOp child:       child_op(node)
+#                          -- receives the current node, returns one BDD
+#      BinaryNodeOp child: child_op(LOW(node), HIGH(node)) -> BDDPair
+#                          -- receives both children of the current node;
+#                             only the FIRST element of the returned pair
+#                             is used as the new child value.
+#
+#    This allows binary extension ops (e.g. "plus", "minus") to be used
+#    directly as "low" or "high" arguments, consuming both children of the
+#    current node to produce a single new child.
+#
+#    {
+#      "type": "makenode",
+#      "low":  <NodeOp | BinaryNodeOp>,   // required -- produces new LOW  child
+#      "high": <NodeOp | BinaryNodeOp>    // required -- produces new HIGH child
+#    }
+#
+# 4. traverse_to
+#    Descends to target level, then applies action.
+#    Maps to: mtbdd_with_traverse_to(target_level, action, pref, action_on)
+#
+#    When "action" is a BinaryNodeOp, it is automatically fed
+#    (LOW(node), HIGH(node)) at the target level, and the returned pair
+#    (new_L, new_R) rebuilds the node as bdd_makenode(LEVEL(node), new_L, new_R).
+#    In this case "action_on" is ignored.
+#
+#    When "action" is a NodeOp, "action_on" controls what the action receives:
+#      "ITSELF" -- the node at target level (default)
+#      "L"      -- LOW(node)
+#      "R"      -- HIGH(node)
+#
+#    {
+#      "type":      "traverse_to",
+#      "target":    <Target>,      // required -- level to descend to
+#      "action":    <Op>,          // required -- NodeOp or BinaryNodeOp
+#      "pref":      <Branch>,      // optional -- descent preference (default: "LR")
+#      "action_on": <Branch>       // optional -- what action receives (default: "ITSELF")
+#                                  //            ignored when action is BinaryNodeOp
+#    }
+#
+# 5. swap  (no-param variant -- NodeOp)
+#    Simple child swap: exchanges LOW and HIGH of the current node.
+#    Maps to: mtbdd_make_swap()
+#    Recognised by the ABSENCE of "paramL".
+#
+#    { "type": "swap" }
+#
+# 6. Extension NodeOp
+#    Any "type" string registered in ExtensionRegistry::node_ops.
+#    The full JSON object is passed to the factory; the factory may read
+#    any additional fields it defines. Inside "put_in", extension NodeOps
+#    are wrapped to absorb the "received" argument (it is ignored).
+#
+#    { "type": "<registered-name>", ... }
+#
+# --- BinaryNodeOp types ------------------------------------------------------
+#
+# 7. swap  (with-param variant -- BinaryNodeOp)
+#    Exchanges values between two nodes according to paramL and paramR.
+#    Maps to: mtbdd_make_swap(paramL, paramR)
+#    Recognised by the PRESENCE of "paramL".
+#
+#    {
+#      "type":   "swap",
+#      "paramL": <SwapParam> | { "$ref": <name> },   // required
+#      "paramR": <SwapParam> | { "$ref": <name> }    // required
+#    }
+#
+# 8. lockstep_to  (BinaryNodeOp)
+#    Descends two BDDs in lockstep to target_level, applies action to both.
+#    Maps to: mtbdd_with_lockstep_to(target_level, action,
+#                                    pref_L, action_on_L, pref_R, action_on_R)
+#    "action" must be a BinaryNodeOp.
+#
+#    {
+#      "type":        "lockstep_to",
+#      "target":      <Target>,        // required -- level to descend to
+#      "action":      <BinaryNodeOp>,  // required
+#      "pref_L":      <Branch>,        // optional (default: "LR")
+#      "action_on_L": <Branch>,        // optional (default: "ITSELF")
+#      "pref_R":      <Branch>,        // optional (default: "LR")
+#      "action_on_R": <Branch>         // optional (default: "ITSELF")
+#    }
+#
+# 9. Extension BinaryNodeOp
+#    Any "type" string registered in ExtensionRegistry::binary_ops.
+#    The full JSON object is passed to the factory. The factory returns a
+#    BinaryNodeOp whose first pair element is the primary result value;
+#    when used as a "makenode" child, only the first element is consumed.
+#    Registering the same name in both node_ops and binary_ops is undefined.
+#
+#    { "type": "<registered-name>", ... }
+#
+# -----------------------------------------------------------------------------
+# SWAPPARAM
+# -----------------------------------------------------------------------------
+#
+# SwapParam defines how one side of a swap contributes and absorbs a value.
+# Maps to: struct SwapParam { put_up: NodeOp, put_in: PutInOp }
+#
+# put_up is a plain NodeOp (receives: current node; returns: BDD to send).
+# put_in has signature BDD(BDD node, BDD received) and supports a restricted
+# set of op types:
+#
+#   "received"  -- returns the value sent by the opposite swap side
+#   "get_side"  -- returns LOW or HIGH of the current node (ignores received)
+#   "makenode"  -- rebuilds the node; children parsed as PutInOps recursively
+#   extension NodeOps -- wrapped to absorb received (it is ignored)
+#
+# {
+#   "put_up": <NodeOp>,     // required
+#   "put_in": <PutInOp>     // required; supports: received, get_side,
+#                           //           makenode, extension NodeOps
+# }
+#
+# Named SwapParams defined in the top-level "defs" block can be referenced
+# anywhere a SwapParam is expected:
+#
+#   { "$ref": "<name>" }
+#
+# -----------------------------------------------------------------------------
+# $ref -- NAMED DEFINITION REFERENCES
+# -----------------------------------------------------------------------------
+#
+# Any SwapParam field (paramL, paramR, or a standalone SwapParam) may be
+# replaced by a reference to a named definition from the top-level "defs" map:
+#
+#   { "$ref": "<name>" }
+#
+# The parser resolves the reference before constructing the op.
+# Circular references are not permitted.
+# $ref is currently only supported for SwapParam; it is not valid as a
+# substitute for arbitrary Op nodes.
+#
+# -----------------------------------------------------------------------------
+# DISPATCH RULES FOR THE PARSER
+# -----------------------------------------------------------------------------
+#
+# To determine the return type of an Op node at parse time, apply these rules
+# in order:
+#
+#   1. "type" == "swap" AND "paramL" is present  -->  BinaryNodeOp
+#   2. "type" == "swap" AND "paramL" is absent   -->  NodeOp
+#   3. "type" == "lockstep_to"                   -->  BinaryNodeOp
+#   4. "type" == "traverse_to"                   -->  NodeOp
+#      (when action is BinaryNodeOp the rebuild is handled internally;
+#       traverse_to's own return type is always NodeOp)
+#   5. "type" == "get_side"                      -->  NodeOp
+#   6. "type" == "makenode"                      -->  NodeOp
+#   7. "type" == "received"                      -->  NodeOp  (context-sensitive:
+#                                                     only valid in put_in)
+#   8. "type" present in binary_ops registry     -->  BinaryNodeOp (extension)
+#   9. "type" present in node_ops registry       -->  NodeOp       (extension)
+#  10. "type" == "group"                         -->  sequencing construct;
+#                                                     not an Op; only valid
+#                                                     inside "ops" arrays
+#  11. "type" unknown                            -->  parse error
+#
+# -----------------------------------------------------------------------------
+# EVENT MODEL  (parser output)
+# -----------------------------------------------------------------------------
+#
+# MOSFFile::next() returns one Event at a time. Event kinds:
+#
+#   OP
+#     A NodeOp parsed on demand, ready to apply to a BDD.
+#     op_repeat carries the symbolic "repeat" count of the entry (default 1).
+#     The op itself is always dispensed exactly once per call.
+#     rep_total is 0 (not meaningful for OP events).
+#
+#   GROUP_BEGIN
+#     Fired once when a group is entered, before any of its ops are dispensed.
+#     rep_total carries the symbolic repeat count of the group (default 1).
+#     group_name carries the optional "name" field (empty string if absent).
+#     op_repeat is 0 (not meaningful for group events).
+#
+#   GROUP_END
+#     Fired once after the last op in the group body has been dispensed.
+#     rep_total and group_name mirror the corresponding GROUP_BEGIN.
+#     op_repeat is 0 (not meaningful for group events).
+#
+# The group body is always executed exactly once in the symbolic model.
+# GROUP_BEGIN and GROUP_END bracket the body so callers can implement their
+# own repetition strategy (unrolling, matrix exponentiation, etc.).
+#
+# MOSFFile::next_unrolled()
+#   Suppresses GROUP_BEGIN / GROUP_END events entirely. Instead, each OP
+#   event's op_repeat is the product of all ancestor group repeat counts
+#   multiplied by the entry's own repeat count. The parsed NodeOp is cached
+#   across repeated dispensing of the same entry so JSON is parsed exactly
+#   once per entry. This fully unrolls nested groups into a flat op stream.
+#
+# MOSFFile::has_next()
+#   Returns true if at least one more event is available. Silently drains
+#   exhausted stack frames. Safe to call before next() or next_unrolled().
+#
+# MOSFFile::reset()
+#   Resets the cursor to the beginning of the ops sequence. Must be called
+#   before switching between next() and next_unrolled() on the same file.
+#
+# Mixing next() and next_unrolled() on the same MOSFFile without reset() is
+# undefined behaviour.
+#
+# -----------------------------------------------------------------------------
+# EXTENSIBILITY
+# -----------------------------------------------------------------------------
+#
+# New op types MUST be added as new "type" string values registered in the
+# ExtensionRegistry before calling parse() or load(). A conforming parser
+# MUST reject any "type" it does not recognise and has no handler for.
+#
+# The top-level object MAY contain additional keys prefixed with "x_" for
+# host-application metadata (e.g. "x_gate_name", "x_author").
+# Parsers MUST ignore unknown "x_" keys.
+#
+# Versioning: if a breaking change is required, increment "mosf_version".
+# Parsers SHOULD reject files whose major version exceeds their own.
+#
+# -----------------------------------------------------------------------------
+# COMPLETE EXAMPLE -- CX gate (control=t, target=c, t < c)
+# -----------------------------------------------------------------------------
+#
+# Scenario: target level t is above control level c in the tree.
+# Strategy: traverse to t, then lockstep both subtrees down to c,
+#           swapping the HIGH child (side R) of each c-level node.
+
+{
+  "mosf_version": "1.0",
+  "x_gate_name": "CX",
+  "tree": "tree_id",
+
+  "vars": {
+    "t": 1,
+    "c": 2
+  },
+
+  "defs": {
+    "high_swap": {
+      "put_up": { "type": "get_side", "side": "R" },
+      "put_in": {
+        "type": "makenode",
+        "low":  { "type": "get_side", "side": "L" },
+        "high": { "type": "received" }
+      }
+    }
+  },
+
+  "ops": [
+    {
+      "type":   "traverse_to",
+      "target": { "var": "t" },
+      "action": {
+        "type":   "lockstep_to",
+        "target": { "var": "c" },
+        "action": {
+          "type":   "swap",
+          "paramL": { "$ref": "high_swap" },
+          "paramR": { "$ref": "high_swap" }
+        }
+      }
+    }
+  ]
+}
+
+# -----------------------------------------------------------------------------
+# COMPLETE EXAMPLE -- CX gate (control=c, target=t, c < t)
+# -----------------------------------------------------------------------------
+#
+# Scenario: control level c is above target level t in the tree.
+# Strategy: traverse to c following only HIGH (control=1), then traverse
+#           to t and perform a simple child swap.
+
+{
+  "mosf_version": "1.0",
+  "x_gate_name": "CX",
+  "tree": "tree_id",
+
+  "vars": {
+    "c": 1,
+    "t": 2
+  },
+
+  "ops": [
+    {
+      "type":      "traverse_to",
+      "target":    { "var": "c" },
+      "action_on": "R",
+      "action": {
+        "type":   "traverse_to",
+        "target": { "var": "t" },
+        "action": { "type": "swap" }
+      }
+    }
+  ]
+}
+
+# -----------------------------------------------------------------------------
+# COMPLETE EXAMPLE -- CCX gate (c1 < c2 < t)
+# -----------------------------------------------------------------------------
+#
+# Scenario: both controls above target.
+# Strategy: descend HIGH at c1, HIGH at c2, then swap at t.
+
+{
+  "mosf_version": "1.0",
+  "x_gate_name": "CCX",
+  "tree": "tree_id",
+
+  "vars": {
+    "c1": 1,
+    "c2": 2,
+    "t":  3
+  },
+
+  "ops": [
+    {
+      "type":      "traverse_to",
+      "target":    { "var": "c1" },
+      "action_on": "R",
+      "action": {
+        "type":      "traverse_to",
+        "target":    { "var": "c2" },
+        "action_on": "R",
+        "action": {
+          "type":   "traverse_to",
+          "target": { "var": "t" },
+          "action": { "type": "swap" }
+        }
+      }
+    }
+  ]
+}
+
+# -----------------------------------------------------------------------------
+# COMPLETE EXAMPLE -- H gate (Hadamard, symbolic string terminals)
+# -----------------------------------------------------------------------------
+#
+# Requires "plus" and "minus" registered in ExtensionRegistry::binary_ops.
+# Each takes (LOW(node), HIGH(node)) and returns a BDDPair whose first element
+# is the computed value; the second element is discarded by makenode.
+
+{
+  "mosf_version": "1.0",
+  "x_gate_name": "H",
+  "tree": "tree_id",
+
+  "vars": { "q": 1 },
+
+  "ops": [
+    {
+      "type":   "traverse_to",
+      "target": { "var": "q" },
+      "action": {
+        "type": "makenode",
+        "low":  { "type": "plus"  },
+        "high": { "type": "minus" }
+      }
+    }
+  ]
+}
+
+# -----------------------------------------------------------------------------
+# COMPLETE EXAMPLE -- repeated gate sequence with a named group
+# -----------------------------------------------------------------------------
+
+{
+  "mosf_version": "1.0",
+  "tree": "tree_id",
+
+  "vars": { "c1": 1, "c2": 2, "t": 3 },
+
+  "ops": [
+    {
+      "type":   "group",
+      "name":   "ccx_loop",
+      "repeat": 4,
+      "ops": [
+        {
+          "type":      "traverse_to",
+          "target":    { "var": "c1" },
+          "action_on": "R",
+          "action": {
+            "type":      "traverse_to",
+            "target":    { "var": "c2" },
+            "action_on": "R",
+            "action": {
+              "type":   "traverse_to",
+              "target": { "var": "t" },
+              "action": { "type": "swap" }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
