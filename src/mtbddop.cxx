@@ -55,7 +55,6 @@ NodeOp mtbdd_with_traverse_to(int target_level,
     return [=](BDD root) -> BDD {
         BddCache cache_obj;
         BddCache_init(&cache_obj, mtbdd_cache_operation.tablesize / 8);
-        MtbddCache_registry_register(&cache_obj);
         BddCache *c = &cache_obj; 
 
         auto traverse = [&](auto& self, BDD node, int parent_level) -> BDD {
@@ -145,8 +144,7 @@ NodeOp mtbdd_with_traverse_to(int target_level,
                          : (int)LEVEL(root);
         BDD res = traverse(traverse, root, root_level - 1);
 
-        MtbddCache_registry_unregister(c);
-        //BddCache_done(&cache_obj);
+        BddCache_done(&cache_obj);
         return res;
     };
 }
@@ -167,7 +165,6 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
 
         BddCache cache_obj;
         BddCache_init(&cache_obj, mtbdd_cache_operation.tablesize / 8);
-        MtbddCache_registry_register(&cache_obj);
         BddCache *c = &cache_obj;
 
         auto virt_node = [&](BDD node, int parent_lv, Branch pref) -> BDD {
@@ -332,8 +329,7 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
                                 L_root, R_root,
                                 root_level(L_root) - 1,
                                 root_level(R_root) - 1);
-        MtbddCache_registry_unregister(c);
-       // BddCache_done(&cache_obj); 
+        BddCache_done(&cache_obj); 
         return res;
     };
 
