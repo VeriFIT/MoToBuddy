@@ -231,6 +231,7 @@ int mtbdd_findterminal(void *value, unsigned hash, mtbdd_terminal_type type){
          case CUSTOM:
             mtbdd_terminal_compare_function_t cmp = CUSTOMCOMPARE(type);
             if (cmp == NULL) {
+               printf("Error: No compare function defined for CUSTOM type %d\n", type);
                bdd_error(BDD_OP);
                return bddfalse;
             }
@@ -292,7 +293,8 @@ unsigned mtbdd_terminal_hash_gbc(void *value, mtbdd_terminal_type type){
 void *mtbdd_getTerminalValue(BDD terminal){
    if(ISZERO(terminal)) {return NULL;}
    if(!ISTERMINAL(terminal)){
-        bdd_error(BDD_OP); // TODO add better error
+      printf("Error: trying to get terminal value of non-terminal node %d\n", terminal);
+      bdd_error(BDD_OP); // TODO add better error
     }
     switch(domaintype){
         case INTVAL:
@@ -320,9 +322,10 @@ void *mtbdd_getTerminalValue(BDD terminal){
  */
 void *mtbdd_getvaluep(BddNode* node){
 
-       if(LEVELp(node) != MAXLEVEL){
-        bdd_error(BDD_OP); // TODO add better error
-    }
+   if(LEVELp(node) != MAXLEVEL){
+      printf("Error: trying to get terminal value of non-terminal node %d\n", (int)(node - bddnodes));   
+      bdd_error(BDD_OP); // TODO add better error
+   }
     switch(domaintype){
         case INTVAL:
         case FLOATVAL:
@@ -349,6 +352,7 @@ BDD mtbdd_apply(BDD l, BDD r, void*(*op)(void*, void*)){
    CHECKa(r, bddfalse);
 
    if(op == NULL){
+      printf("Error: NULL operation passed to mtbdd_apply.\n");
       bdd_error(BDD_OP);
       return bddfalse;
    }
@@ -453,6 +457,7 @@ BDD mtbdd_apply_guarded(BDD l, BDD r, BDD(*op)(BDD, BDD)) {
    CHECKa(r, bddfalse);
 
    if(op == NULL){
+      printf("Error: NULL operation passed to mtbdd_apply_guarded.\n");
       bdd_error(BDD_OP);
       return bddfalse;
    }
@@ -507,6 +512,7 @@ BDD mtbdd_apply_guarded_param(BDD l, BDD r, BDD(*op)(BDD, BDD, size_t), size_t p
    CHECKa(r, bddfalse);
 
    if(op == NULL){
+      printf("Error: NULL operation passed to mtbdd_apply_guarded_param.\n");
       bdd_error(BDD_OP);
       return bddfalse;
    }
@@ -559,6 +565,7 @@ BDD mtbdd_apply_unary(BDD l, void*(*op)(void*)) {
    CHECKa(l, bddfalse);
 
    if (op == NULL) {
+      printf("Error: NULL operation passed to mtbdd_apply_unary.\n");
       bdd_error(BDD_OP);
       return bddfalse;
    }
@@ -611,6 +618,7 @@ BDD mtbdd_apply_unary_param(BDD l, void*(*op)(void*, size_t), size_t param) {
    CHECKa(l, bddfalse);
 
    if (op == NULL) {
+      printf("Error: NULL operation passed to mtbdd_apply_unary_param.\n");
       bdd_error(BDD_OP);
       return bddfalse;
    }
@@ -713,6 +721,7 @@ BDD mtbdd_apply_unary_guarded(BDD l, BDD(*op)(BDD, void*), size_t arg) {
    CHECKa(l, bddfalse);
 
    if (op == NULL) {
+      printf("Error: NULL operation passed to mtbdd_apply_unary_guarded.\n");
       bdd_error(BDD_OP);
       return bddfalse;
    }
@@ -912,6 +921,7 @@ BDD mtbdd_operation_rec(BDD operand, size_t* controls, size_t controlNum, BDD(*o
    CHECKa(operand, bddfalse); // sanity check
    if (operand == bdd_false()) { return bdd_false(); }
    if (op == NULL) {
+      printf("Error: NULL operation passed to mtbdd_operation.\n");
       bdd_error(BDD_OP);
       return bddfalse;
    }
@@ -991,6 +1001,7 @@ BDD mtbdd_operation_guarded(BDD operand, size_t* controls, size_t controlNum, BD
    CHECKa(operand, bddfalse); // sanity check
    if (operand == bdd_false()) { return bdd_false(); }
    if (op == NULL) {
+      printf("Error: NULL operation passed to mtbdd_operation_guarded.\n");
       bdd_error(BDD_OP);
       return bddfalse;
    }

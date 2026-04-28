@@ -33,6 +33,7 @@ unsigned mtbdd_new_terminal_type(void) {
 
 void mtbdd_register_hash_function(mtbdd_terminal_type type, mtbdd_terminal_hash_function_t hashfun) {
     if (type >= (unsigned)mtbdd_terminal_type_number) {
+        printf("Error: invalid terminal type %d passed to mtbdd_register_hash_function.\n", type);
         bdd_error(BDD_OP); // invalid type
         return;
     }
@@ -41,6 +42,7 @@ void mtbdd_register_hash_function(mtbdd_terminal_type type, mtbdd_terminal_hash_
 
 void mtbdd_register_compare_function(mtbdd_terminal_type type, mtbdd_terminal_compare_function_t comparefun) {
     if (type >= (unsigned)mtbdd_terminal_type_number) {
+        printf("Error: invalid terminal type %d passed to mtbdd_register_compare_function.\n", type);
         bdd_error(BDD_OP); // invalid type
         return;
     }
@@ -49,6 +51,7 @@ void mtbdd_register_compare_function(mtbdd_terminal_type type, mtbdd_terminal_co
 
 void mtbdd_register_free_function(mtbdd_terminal_type type, mtbdd_terminal_free_function_t freefun) {
     if (type >= (unsigned)mtbdd_terminal_type_number) {
+        printf("Error: invalid terminal type %d passed to mtbdd_register_free_function.\n", type);
         bdd_error(BDD_OP); // invalid type
         return;
     }
@@ -58,6 +61,7 @@ void mtbdd_register_free_function(mtbdd_terminal_type type, mtbdd_terminal_free_
 
 void mtbdd_register_to_str_function(mtbdd_terminal_type type, mtbdd_terminal_to_str_function_t toStrFun) {
     if (type >= (unsigned)mtbdd_terminal_type_number) {
+        printf("Error: invalid terminal type %d passed to mtbdd_register_to_str_function.\n", type);
         bdd_error(BDD_OP); // invalid type
         return;
     }
