@@ -52,21 +52,13 @@ NodeOp mtbdd_with_traverse_to(int target_level,
                               Branch pref,
                               Branch action_on) {
 
-
-
-
     return [=](BDD root) -> BDD {
-        BddCache *cache = (BddCache *)malloc(sizeof(BddCache));
-
-        if (!cache) {
-            bdd_error(BDD_MEMORY);
-        }
-
-        BddCache_init(cache, mtbdd_cache_operation.tablesize / 8); // smaller should suffice
-        MtbddCache_registry_register(cache);
+        BddCache cache_obj;
+        BddCache_init(&cache_obj, mtbdd_cache_operation.tablesize / 8);
+        MtbddCache_registry_register(&cache_obj);
+        BddCache *c = &cache_obj; 
 
         auto traverse = [&](auto& self, BDD node, int parent_level) -> BDD {
-            BddCache *c = g_cache_registry.head->cache; // use the cache we registered above
 
             // --- Cache lookup ---
             int hash = PAIR(node, parent_level);
@@ -153,7 +145,8 @@ NodeOp mtbdd_with_traverse_to(int target_level,
                          : (int)LEVEL(root);
         BDD res = traverse(traverse, root, root_level - 1);
 
-        MtbddCache_registry_unregister(cache);
+        MtbddCache_registry_unregister(c);
+        BddCache_done(&cache_obj);
         return res;
     };
 }
@@ -172,15 +165,10 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
     std::function<BDDPair(BDD, BDD)> fn =
         [=](BDD L_root, BDD R_root) -> BDDPair {
 
-        //auto managed = std::make_shared<OwnedCache>(1000003);
-        BddCache *cache = (BddCache *)malloc(sizeof(BddCache));
-
-        if (!cache) {
-            bdd_error(BDD_MEMORY);
-        }
-
-        BddCache_init(cache, mtbdd_cache_operation.tablesize / 8); // smaller should suffice
-        MtbddCache_registry_register(cache);   
+        BddCache cache_obj;
+        BddCache_init(&cache_obj, mtbdd_cache_operation.tablesize / 8);
+        MtbddCache_registry_register(&cache_obj);
+        BddCache *c = &cache_obj;
 
         auto virt_node = [&](BDD node, int parent_lv, Branch pref) -> BDD {
             if (!ISCONST(node) && (int)LEVEL(node) <= target_level)
@@ -199,8 +187,6 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
                             int parent_lv_L,
                             int parent_lv_R) -> BDDPair {
             
-            BddCache *c = g_cache_registry.head->cache; // use the cache we registered above
-
             // --- Cache lookup ---
             int hash = PAIR(PAIR(L, R), PAIR(parent_lv_L, parent_lv_R));
             BddCacheData* entry = BddCache_lookup(c, hash);
@@ -213,7 +199,7 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
             }
 
             // --- Virtualize ---
-            BDD wL = ((int)LEVEL(L) > target_level)
+            BDD wL = (ISCONST(L) || (int)LEVEL(L) > target_level)
                      ? virt_node(L, parent_lv_L, pref_L)
                      : L;
             bool virt_L = (wL != L);
@@ -346,7 +332,8 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
                                 L_root, R_root,
                                 root_level(L_root) - 1,
                                 root_level(R_root) - 1);
-        MtbddCache_registry_unregister(cache);
+        MtbddCache_registry_unregister(c);
+        BddCache_done(&cache_obj); 
         return res;
     };
 
