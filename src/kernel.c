@@ -142,7 +142,7 @@ static char *errorstrings[BDD_ERRNUM] =
 
 /*=== OTHER INTERNAL DEFINITIONS =======================================*/
 
-#define NODEHASH(lvl,l,h) (TRIPLE(lvl,l,h) % bddnodesize)
+#define NODEHASH(lvl,l,h) (((TRIPLE(lvl,l,h) % bddnodesize) + 2) % bddnodesize)
 
 
 /*************************************************************************
@@ -1048,9 +1048,6 @@ static void bdd_gbc_rehash(void)
          } // when value in the table
          else {
             hash = NODEHASH(LEVELp(node), LOWp(node), HIGHp(node));
-            if (hash == 1) {
-               hash = 2;
-            }
          }
 
          node->next = bddnodes[hash].hash;
@@ -1112,9 +1109,6 @@ void bdd_gbc(void)
          } // when value in the table
          else {
             hash = NODEHASH(LEVELp(node), LOWp(node), HIGHp(node));
-            if (hash == 1) {
-               hash = 2;
-            }
          }
 
          node->next = bddnodes[hash].hash;
@@ -1347,9 +1341,6 @@ int bdd_makenode(unsigned int level, int low, int high)
 #endif
 
    hash = NODEHASH(level, low, high);
-   if (hash == 1) {
-      hash = 2;
-   }
 
    if (level != MAXLEVEL || !DOMAIN_NOT_SHORT) {
       /* check whether childs are equal */
