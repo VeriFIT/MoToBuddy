@@ -183,7 +183,7 @@ int bdd_init(int initnodesize, int cs)
    
    bddnodesize = bdd_prime_gte(initnodesize);
    
-   if ((bddnodes=(BddNode*)malloc(sizeof(BddNode)*bddnodesize)) == NULL)
+   if ((bddnodes = calloc(1, sizeof(BddNode)*bddnodesize)) == NULL)
       return bdd_error(BDD_MEMORY);
 
    bddresized = 0;
