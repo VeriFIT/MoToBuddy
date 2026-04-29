@@ -419,7 +419,7 @@ void buddy_mtbdd_fprintdot_rec(FILE* ofile, BDD r) {
    }
 
    fprintf(ofile, "%d [label=\"", r);
-         if (ISTERMINAL(r)) {  
+   if (ISTERMINAL(r)) {  
          mtbdd_terminal_type type = mtbdd_get_terminal_type(r);
          void *terminal_val = mtbdd_getTerminalValue(r);
          // if buffer is too small, user function should reallocate it and free the original

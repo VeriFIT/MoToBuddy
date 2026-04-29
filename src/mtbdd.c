@@ -79,6 +79,9 @@ int mtbdd_maketerminal(void *value, mtbdd_terminal_type type) {
          mtbdd_terminal_hash_function_t hashfun = CUSTOMHASH(type);
          if(hashfun){custom = hashfun(value);}
          unsigned hash = NODEHASH(MAXLEVEL, custom, 42); // 42 is a placeholder
+         if (hash == 1) {
+            hash = 2;
+         }
          foundTerminal = mtbdd_findterminal(value, hash, type);
          if(foundTerminal != -1){return foundTerminal;}
          
@@ -276,7 +279,11 @@ unsigned mtbdd_terminal_hash_gbc(void *value, mtbdd_terminal_type type){
 
       case CUSTOM:
          mtbdd_terminal_hash_function_t hashfun = CUSTOMHASH(type);
-         return NODEHASH(MAXLEVEL, hashfun(value), 42); 
+         unsigned hash = NODEHASH(MAXLEVEL, hashfun(value), 42); 
+         if (hash == 1) {
+               hash = 2;
+            }
+         return hash;
    }
 }
 
