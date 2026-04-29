@@ -200,6 +200,7 @@ int bdd_init(int initnodesize, int cs)
    bddnodes[bddnodesize-1].next = 0;
 
    bddnodes[0].refcou = bddnodes[1].refcou = MAXREF;
+   bddnodes[0].level = bddnodes[1].level = MAXLEVEL;
    LOW(0) = HIGH(0) = 0;
    LOW(1) = HIGH(1) = 1;
    
