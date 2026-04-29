@@ -1464,6 +1464,7 @@ int bdd_noderesize(int doRehash)
       bddnodes[n].hash = 0;
       LEVEL(n) = 0;
       LOW(n) = -1;
+      MARKED(n) = 0;
       bddnodes[n].next = n+1;
    }
    bddnodes[bddnodesize-1].next = bddfreepos;
