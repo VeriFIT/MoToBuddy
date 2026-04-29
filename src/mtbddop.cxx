@@ -159,7 +159,7 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
                                     Branch action_on_L,
                                     Branch pref_R,
                                     Branch action_on_R) {
-
+printf("lockstep_to(target=%d, pref_L=%d, pref_R=%d)\n", target_level, pref_L, pref_R);
     std::function<BDDPair(BDD, BDD)> fn =
         [=](BDD L_root, BDD R_root) -> BDDPair {
 
