@@ -291,7 +291,7 @@ unsigned mtbdd_terminal_hash_gbc(void *value, mtbdd_terminal_type type){
  * @return Pointer to the value
  */
 void *mtbdd_getTerminalValue(BDD terminal){
-   if(ISZERO(terminal)) {return NULL;}
+   if(ISCONST(terminal)) {return NULL;}
    if(!ISTERMINAL(terminal)){
       printf("Error: trying to get terminal value of non-terminal node %d with level %d, high %d, low %d\n", 
          terminal, LEVEL(terminal), 
