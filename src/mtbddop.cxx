@@ -203,7 +203,7 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
             if (virt_L) PUSHREF(wL);
 
             // Virtualize R if needed and protect the fresh node immediately
-            BDD wR = ((int)LEVEL(R) > target_level)
+            BDD wR = (ISCONST(R) || (int)LEVEL(R) > target_level)
                      ? virt_node(R, parent_lv_R, pref_R)
                      : R;
             bool virt_R = (wR != R);
