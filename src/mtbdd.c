@@ -293,7 +293,9 @@ unsigned mtbdd_terminal_hash_gbc(void *value, mtbdd_terminal_type type){
 void *mtbdd_getTerminalValue(BDD terminal){
    if(ISZERO(terminal)) {return NULL;}
    if(!ISTERMINAL(terminal)){
-      printf("Error: trying to get terminal value of non-terminal node %d with level %d\n", terminal, LEVEL(terminal));
+      printf("Error: trying to get terminal value of non-terminal node %d with level %d, high %d, low %d\n", 
+         terminal, LEVEL(terminal), 
+         HIGH(terminal), LOW(terminal));
       bdd_error(BDD_OP); // TODO add better error
     }
     switch(domaintype){
@@ -323,7 +325,8 @@ void *mtbdd_getTerminalValue(BDD terminal){
 void *mtbdd_getvaluep(BddNode* node){
 
    if(LEVELp(node) != MAXLEVEL){
-      printf("Error: trying to get terminal value of non-terminal node %d with level %d\n", (int)(node - bddnodes), node->level);   
+      printf("Error: trying to get terminal value of non-terminal node BddNode %d with level %d, high %d, low %d\n", 
+         node->hash, node->level, node->high, node->low);   
       bdd_error(BDD_OP); // TODO add better error
    }
     switch(domaintype){
