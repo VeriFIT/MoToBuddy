@@ -144,7 +144,7 @@ NodeOp mtbdd_with_traverse_to(int target_level,
                          : (int)LEVEL(root);
         BDD res = traverse(traverse, root, root_level - 1);
 
-        BddCache_done(&cache_obj);
+       // BddCache_done(&cache_obj);
         return res;
     };
 }
@@ -329,7 +329,7 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
                                 L_root, R_root,
                                 root_level(L_root) - 1,
                                 root_level(R_root) - 1);
-        BddCache_done(&cache_obj); 
+      //  BddCache_done(&cache_obj); 
         return res;
     };
 
