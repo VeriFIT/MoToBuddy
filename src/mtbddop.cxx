@@ -72,7 +72,7 @@ NodeOp mtbdd_with_traverse_to(int target_level,
 
             BDD working_node = node;
 
-            if (LEVEL(node) > (unsigned)target_level || ISCONST(node)) {
+            if ((int)LEVEL(node) > target_level || ISCONST(node)) {
                 checkSameChildren = 0;
                 if (pref == Branch::LR || pref == Branch::RL) {
                     working_node = bdd_makenode(target_level, node, node);
@@ -159,7 +159,6 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
                                     Branch action_on_L,
                                     Branch pref_R,
                                     Branch action_on_R) {
-printf("lockstep_to(target=%d, pref_L=%d, pref_R=%d)\n", target_level, pref_L, pref_R);
     std::function<BDDPair(BDD, BDD)> fn =
         [=](BDD L_root, BDD R_root) -> BDDPair {
 
