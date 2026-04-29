@@ -76,8 +76,10 @@ NodeOp mtbdd_with_traverse_to(int target_level,
                 checkSameChildren = 0;
                 if (pref == Branch::LR || pref == Branch::RL) {
                     working_node = bdd_makenode(target_level, node, node);
+                    printf("Virtualizing node %d at level %d to level %d\n", node, LEVEL(node), target_level);
                 } else {
                     working_node = bdd_makenode(parent_level + 1, node, node);
+                    printf("Virtualizing node %d at level %d to level %d\n", node, LEVEL(node), parent_level + 1);
                 }
                 checkSameChildren = 1;
                 PUSHREF(working_node);
@@ -173,6 +175,7 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
                           ? target_level
                           : parent_lv + 1;
             checkSameChildren = 0;
+            printf("Virtualizing node %d at level %d to level %d\n", node, LEVEL(node), virt_lv);
             BDD w = bdd_makenode(virt_lv, node, node);
             checkSameChildren = 1;
             return w;
