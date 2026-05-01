@@ -54,10 +54,10 @@ NodeOp mtbdd_with_traverse_to(int target_level,
 
     return [=](BDD root) -> BDD {
         BddCache* c = (BddCache*)malloc(sizeof(BddCache));
-        BddCache_init(c, mtbdd_cache_operation.tablesize / 8);
         if (!c) {
             throw std::runtime_error("Failed to allocate BddCache");
         }
+        BddCache_init(c, mtbdd_cache_operation.tablesize / 8);
         MtbddCache_registry_register(c);
 
         auto traverse = [&](auto& self, BDD node, int parent_level) -> BDD {
@@ -147,7 +147,11 @@ NodeOp mtbdd_with_traverse_to(int target_level,
                          : (int)LEVEL(root);
         BDD res = traverse(traverse, root, root_level - 1);
 
-       // BddCache_done(&cache_obj);
+        // Tear down: unregister before _done so the GC never walks a freed
+        // table, then free the table (BddCache_done) and the header itself.
+        MtbddCache_registry_unregister(c);
+        BddCache_done(c);
+        free(c);
         return res;
     };
 }
@@ -334,13 +338,17 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
                                 L_root, R_root,
                                 root_level(L_root) - 1,
                                 root_level(R_root) - 1);
-      //  BddCache_done(&cache_obj); 
+
+        // Tear down: unregister before _done so the GC never walks a freed
+        // table, then free the table (BddCache_done) and the header itself.
+        MtbddCache_registry_unregister(c);
+        BddCache_done(c);
+        free(c);
         return res;
     };
 
     return fn;
 }
-
 /* -------------------------------------------------------------------------
  * Swap combinators
  * ---------------------------------------------------------------------- */
