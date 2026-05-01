@@ -55,6 +55,8 @@ NodeOp mtbdd_with_traverse_to(int target_level,
         auto traverse = [&](auto& self, BDD node, int parent_level) -> BDD {
 
             // --- Cache lookup ---
+            assert(c == &oc.cache && "c pointer corrupted");
+            assert(c->table != NULL || (fprintf(stderr, "table=NULL tablesize=%d before lookup\n", c->tablesize), 0));
             int hash = PAIR(node, parent_level);
             BddCacheData* entry = BddCache_lookup(c, hash);
             if (BddCache_is_valid(c, entry)
@@ -84,18 +86,21 @@ NodeOp mtbdd_with_traverse_to(int target_level,
             if ((int)LEVEL(working_node) == target_level) {
                 if (action_on == Branch::L) {
                     PUSHREF(action(LOW(working_node)));
+                    assert(c->table != NULL || (fprintf(stderr, "table=NULL tablesize=%d after action L\n", c->tablesize), 0));
                     res = bdd_makenode(LEVEL(working_node),
                                        READREF(1),
                                        HIGH(working_node));
                     POPREF(1);
                 } else if (action_on == Branch::R) {
                     PUSHREF(action(HIGH(working_node)));
+                    assert(c->table != NULL || (fprintf(stderr, "table=NULL tablesize=%d after action R\n", c->tablesize), 0));
                     res = bdd_makenode(LEVEL(working_node),
                                        LOW(working_node),
                                        READREF(1));
                     POPREF(1);
                 } else { // Branch::ITSELF
                     res = action(working_node);
+                    assert(c->table != NULL || (fprintf(stderr, "table=NULL tablesize=%d after action ITSELF\n", c->tablesize), 0));
                 }
                 if (node != working_node) POPREF(1);
                 entry = BddCache_lookup(c, hash);
@@ -106,24 +111,30 @@ NodeOp mtbdd_with_traverse_to(int target_level,
             // --- Descent ---
             if (pref == Branch::R) {
                 PUSHREF(self(self, HIGH(working_node), (int)LEVEL(working_node)));
+                assert(c->table != NULL || (fprintf(stderr, "table=NULL tablesize=%d after descent R\n", c->tablesize), 0));
                 res = bdd_makenode(LEVEL(working_node),
                                    LOW(working_node),
                                    READREF(1));
                 POPREF(1);
             } else if (pref == Branch::L) {
                 PUSHREF(self(self, LOW(working_node), (int)LEVEL(working_node)));
+                assert(c->table != NULL || (fprintf(stderr, "table=NULL tablesize=%d after descent L\n", c->tablesize), 0));
                 res = bdd_makenode(LEVEL(working_node),
                                    READREF(1),
                                    HIGH(working_node));
                 POPREF(1);
             } else if (pref == Branch::RL) {
                 PUSHREF(self(self, HIGH(working_node), (int)LEVEL(working_node)));
+                assert(c->table != NULL || (fprintf(stderr, "table=NULL tablesize=%d after descent RL high\n", c->tablesize), 0));
                 PUSHREF(self(self, LOW(working_node),  (int)LEVEL(working_node)));
+                assert(c->table != NULL || (fprintf(stderr, "table=NULL tablesize=%d after descent RL low\n", c->tablesize), 0));
                 res = bdd_makenode(LEVEL(working_node), READREF(1), READREF(2));
                 POPREF(2);
             } else { // Branch::LR
                 PUSHREF(self(self, LOW(working_node),  (int)LEVEL(working_node)));
+                assert(c->table != NULL || (fprintf(stderr, "table=NULL tablesize=%d after descent LR low\n", c->tablesize), 0));
                 PUSHREF(self(self, HIGH(working_node), (int)LEVEL(working_node)));
+                assert(c->table != NULL || (fprintf(stderr, "table=NULL tablesize=%d after descent LR high\n", c->tablesize), 0));
                 res = bdd_makenode(LEVEL(working_node), READREF(2), READREF(1));
                 POPREF(2);
             }
@@ -177,6 +188,8 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
                             int parent_lv_R) -> BDDPair {
             
             // --- Cache lookup ---
+            assert(c == &oc.cache && "c pointer corrupted in lockstep");
+            assert(c->table != NULL || (fprintf(stderr, "lockstep table=NULL tablesize=%d before lookup\n", c->tablesize), 0));
             int hash = PAIR(PAIR(L, R), PAIR(parent_lv_L, parent_lv_R));
             BddCacheData* entry = BddCache_lookup(c, hash);
             if (BddCache_is_valid(c, entry)
@@ -210,6 +223,7 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
                 if (action_on_L == Branch::ITSELF &&
                     action_on_R == Branch::ITSELF) {
                     res = action(wL, wR);
+                    assert(c->table != NULL || (fprintf(stderr, "lockstep table=NULL after action ITSELF\n"), 0));
                 } else {
                     BDD in_L = (action_on_L == Branch::L) ? LOW(wL)
                               : (action_on_L == Branch::R) ? HIGH(wL)
@@ -219,6 +233,7 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
                             : wR;
 
                     auto out_pair = action(in_L, in_R);
+                    assert(c->table != NULL || (fprintf(stderr, "lockstep table=NULL after action branch\n"), 0));
                     PUSHREF(out_pair.first);
                     PUSHREF(out_pair.second);
 
@@ -263,6 +278,7 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
                 PUSHREF(lo.first);
                 PUSHREF(lo.second);
                 auto hi = self(self, hi_L, hi_R, lv, lv);
+                assert(c->table != NULL || (fprintf(stderr, "lockstep table=NULL after hi same level\n"), 0));
 
                 // lo.first/second may be stale after hi recursion -- use refstack
                 // READREF(2) = lo.first (pushed first), READREF(1) = lo.second
@@ -281,6 +297,7 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
                 PUSHREF(lo.first);
                 PUSHREF(lo.second);
                 auto hi = self(self, hi_L, R, lv, parent_lv_R);
+                assert(c->table != NULL || (fprintf(stderr, "lockstep table=NULL after hi L leads\n"), 0));
 
                 res = BDDPair(bdd_makenode(lv, READREF(2), hi.first),
                               bdd_makenode(lv, READREF(1), hi.second));
@@ -297,6 +314,7 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
                 PUSHREF(lo.first);
                 PUSHREF(lo.second);
                 auto hi = self(self, L, hi_R, parent_lv_L, lv);
+                assert(c->table != NULL || (fprintf(stderr, "lockstep table=NULL after hi R leads\n"), 0));
 
                 res = BDDPair(bdd_makenode(lv, READREF(2), hi.first),
                               bdd_makenode(lv, READREF(1), hi.second));
