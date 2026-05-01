@@ -437,6 +437,102 @@ BDD mtbdd_apply_rec(BDD l, BDD r, void*(*op)(void*, void*)) {
 }
 
 /**
+ * @brief Binary apply operation for MTBDDs with an additional parameter.
+ * @see mtbdd_apply
+ * @param l Left-hand side MTBDD.
+ * @param r Right-hand side MTBDD.
+ * @param op User-defined binary operation on leaves that takes an additional parameter.
+ * @param param Additional parameter to pass to the operation.
+ * @return Result of the apply operation.
+ */
+BDD mtbdd_apply_param(BDD l, BDD r, void*(*op)(void*, void*, size_t), size_t param) {
+   CHECKa(l, bddfalse);
+   CHECKa(r, bddfalse);
+
+   if(op == NULL){
+      printf("Error: NULL operation passed to mtbdd_apply_param.\n");
+      bdd_error(BDD_OP);
+      return bddfalse;
+   }
+   BDD res = mtbdd_apply_param_rec(l,r,op,param);
+
+   return res;
+}
+
+BDD mtbdd_apply_param_rec(BDD l, BDD r, void*(*op)(void*, void*, size_t), size_t param) {
+
+    BddCacheData *entry;
+    BDD res;
+
+    entry = BddCache_lookup(&mtbdd_cache_apply, TRIPLE(PAIR(l,r),(int)param,(int)(size_t)op));
+    if( BddCache_is_valid(&mtbdd_cache_apply, entry)
+       && entry->a == l && entry->b == r && entry->c == (int)(size_t)op && entry->d == (int)param){
+        return entry->r.res;
+    }
+    if((ISTERMINAL(l) || ISZERO(l)) && (ISZERO(r) || ISTERMINAL(r))){
+        void *terminalValueL = mtbdd_getTerminalValue(l);
+        void *terminalValueR = mtbdd_getTerminalValue(r);
+        mtbdd_terminal_type terminalTypeL = mtbdd_get_terminal_type(l);
+        mtbdd_terminal_type terminalTypeR = mtbdd_get_terminal_type(r);
+
+        mtbdd_terminal_type decidingTerminalType;
+
+        if (l == bdd_false()) decidingTerminalType = terminalTypeR;
+        else decidingTerminalType = terminalTypeL;
+
+        if (terminalTypeL != terminalTypeR
+            && r != bdd_false() && l != bdd_false()) {
+         printf("Mismatch of terminal types in APPLY. %d-%d %d-%d\n", l, terminalTypeL, r, terminalTypeR);
+        }
+        void *resultValue = op(terminalValueL,terminalValueR, param);
+        if (resultValue == NULL) {return bdd_false();}
+        mtbdd_terminal_compare_function_t cmp = CUSTOMCOMPARE(decidingTerminalType);
+        mtbdd_terminal_free_function_t freeterminal = CUSTOMFREE(decidingTerminalType);
+        if (cmp == NULL) {
+         printf("Missing custom compare for type %d.\n", decidingTerminalType);
+         bdd_error(BDD_OP);
+        }
+        if (cmp(resultValue, terminalValueL)) {
+            if (freeterminal) freeterminal(resultValue);
+            free(resultValue);
+            return l;
+        }
+        if(cmp(resultValue, terminalValueR)) {
+            if (freeterminal) freeterminal(resultValue);
+            free(resultValue);
+          return r;
+        }
+        res = (mtbdd_maketerminal(resultValue, decidingTerminalType));
+        if(!DOMAIN_NOT_SHORT){ // value will be directly in the node
+            free(resultValue); // we don't need the allocated one
+        }
+    }
+    else{
+      if(LEVEL(l) == LEVEL(r)){
+         PUSHREF(mtbdd_apply_rec(LOW(l), LOW(r), op));
+         PUSHREF(mtbdd_apply_rec(HIGH(l), HIGH(r), op));
+         res = bdd_makenode(LEVEL(l), READREF(2), READREF(1));
+      }
+      else if(LEVEL(l) < LEVEL(r)){
+            PUSHREF(mtbdd_apply_rec(LOW(l), r, op));
+            PUSHREF(mtbdd_apply_rec(HIGH(l), r, op));
+            res = bdd_makenode(LEVEL(l), READREF(2), READREF(1));
+      }
+      else{
+            PUSHREF(mtbdd_apply_rec(l, LOW(r), op));
+            PUSHREF(mtbdd_apply_rec(l, HIGH(r), op));
+            res = bdd_makenode(LEVEL(r), READREF(2), READREF(1));
+      }
+
+      POPREF(2);
+   }
+   // add reference to cache
+   BddCache_store4(entry, &mtbdd_cache_apply, l, r, (int)(size_t)op, (int)param, res);
+   return res;
+}
+
+
+/**
  * @brief User-guarded binary apply operation for MTBDDs.
  *
  * This version of apply allows a user-defined operation `op` to decide whether
