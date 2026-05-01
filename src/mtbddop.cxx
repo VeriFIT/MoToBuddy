@@ -12,16 +12,17 @@
 #include <memory>
 #include "prime.h"
 #include "mtbdd_cache_registry.h"
-
+#include <assert.h>
 struct OwnedCache {
     BddCache cache;
-
+    bool active = false;
     explicit OwnedCache(int size) {
         BddCache_init(&cache, size);
         MtbddCache_registry_register(&cache);
     }
     ~OwnedCache() {
         MtbddCache_registry_unregister(&cache);
+        assert(!active && "OwnedCache destroyed while traverse is active!");
         BddCache_done(&cache);
     }
     OwnedCache(const OwnedCache&)             = delete;
@@ -50,7 +51,7 @@ NodeOp mtbdd_with_traverse_to(int target_level,
     return [=](BDD root) -> BDD {
         OwnedCache oc(mtbdd_cache_operation.tablesize / 8);
         BddCache* c = &oc.cache;
-
+        oc.active = true;
         auto traverse = [&](auto& self, BDD node, int parent_level) -> BDD {
 
             // --- Cache lookup ---
@@ -136,7 +137,9 @@ NodeOp mtbdd_with_traverse_to(int target_level,
         int root_level = (ISTERMINAL(root) || ISCONST(root))
                          ? bdd_varnum()
                          : (int)LEVEL(root);
-        return traverse(traverse, root, root_level - 1);
+        BDD res = traverse(traverse, root, root_level - 1);
+        oc.active = false;
+        return res;
     };
 }
 
@@ -155,7 +158,7 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
 
         OwnedCache oc(mtbdd_cache_operation.tablesize / 8);
         BddCache* c = &oc.cache;
-
+        oc.active = true;
         auto virt_node = [&](BDD node, int parent_lv, Branch pref) -> BDD {
             if (!ISCONST(node) && (int)LEVEL(node) <= target_level)
                 return node;
@@ -314,10 +317,13 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
             return (ISTERMINAL(n) || ISCONST(n))
                    ? bdd_varnum() : (int)LEVEL(n);
         };
-        return lockstep(lockstep,
+        BDDPair res = lockstep(lockstep,
                         L_root, R_root,
                         root_level(L_root) - 1,
                         root_level(R_root) - 1);
+
+        oc.active = false;
+        return res;
     };
 
     return fn;
