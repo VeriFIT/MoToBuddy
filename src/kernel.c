@@ -1333,6 +1333,10 @@ void bdd_unmark_upto(int i, int level)
 
 int bdd_makenode(unsigned int level, int low, int high)
 {
+   if (low == 1 || high == 1) {
+      printf("makenode1\n");
+      fflush(stdout);
+   }
    register BddNode *node;
    register unsigned int hash;
    register int res;
