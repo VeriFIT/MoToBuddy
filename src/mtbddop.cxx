@@ -13,25 +13,20 @@
 #include "prime.h"
 #include "mtbdd_cache_registry.h"
 
-// struct OwnedCache {
-//     BddCache cache;
-//     bool registered = false;
+struct OwnedCache {
+    BddCache cache;
 
-//     explicit OwnedCache(int size) {
-//         BddCache_init(&cache, size);
-//         MtbddCache_registry_register(&cache);
-//         registered = true;
-//     }
-//     ~OwnedCache() {
-//         if (registered) {
-//             MtbddCache_registry_unregister(&cache);
-//             registered = false;
-//         }
-//         BddCache_done(&cache);
-//     }
-//     OwnedCache(const OwnedCache&)             = delete;
-//     OwnedCache& operator=(const OwnedCache&) = delete;
-// };
+    explicit OwnedCache(int size) {
+        BddCache_init(&cache, size);
+        MtbddCache_registry_register(&cache);
+    }
+    ~OwnedCache() {
+        MtbddCache_registry_unregister(&cache);
+        BddCache_done(&cache);
+    }
+    OwnedCache(const OwnedCache&)             = delete;
+    OwnedCache& operator=(const OwnedCache&) = delete;
+};
 
 /* -------------------------------------------------------------------------
  * Primitives
@@ -53,12 +48,8 @@ NodeOp mtbdd_with_traverse_to(int target_level,
                               Branch action_on) {
 
     return [=](BDD root) -> BDD {
-        BddCache* c = (BddCache*)malloc(sizeof(BddCache));
-        if (!c) {
-            throw std::runtime_error("Failed to allocate BddCache");
-        }
-        BddCache_init(c, mtbdd_cache_operation.tablesize / 8);
-        MtbddCache_registry_register(c);
+        OwnedCache oc(mtbdd_cache_operation.tablesize / 8);
+        BddCache* c = &oc.cache;
 
         auto traverse = [&](auto& self, BDD node, int parent_level) -> BDD {
 
@@ -145,14 +136,7 @@ NodeOp mtbdd_with_traverse_to(int target_level,
         int root_level = (ISTERMINAL(root) || ISCONST(root))
                          ? bdd_varnum()
                          : (int)LEVEL(root);
-        BDD res = traverse(traverse, root, root_level - 1);
-
-        // Tear down: unregister before _done so the GC never walks a freed
-        // table, then free the table (BddCache_done) and the header itself.
-        MtbddCache_registry_unregister(c);
-        BddCache_done(c);
-        free(c);
-        return res;
+        return traverse(traverse, root, root_level - 1);
     };
 }
 
@@ -169,12 +153,8 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
     std::function<BDDPair(BDD, BDD)> fn =
         [=](BDD L_root, BDD R_root) -> BDDPair {
 
-        BddCache *c = (BddCache*)malloc(sizeof(BddCache));
-        if (!c) {
-            throw std::runtime_error("Failed to allocate BddCache");
-        }
-        BddCache_init(c, mtbdd_cache_operation.tablesize / 8);
-        MtbddCache_registry_register(c);
+        OwnedCache oc(mtbdd_cache_operation.tablesize / 8);
+        BddCache* c = &oc.cache;
 
         auto virt_node = [&](BDD node, int parent_lv, Branch pref) -> BDD {
             if (!ISCONST(node) && (int)LEVEL(node) <= target_level)
@@ -334,17 +314,10 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
             return (ISTERMINAL(n) || ISCONST(n))
                    ? bdd_varnum() : (int)LEVEL(n);
         };
-        BDDPair res  = lockstep(lockstep,
-                                L_root, R_root,
-                                root_level(L_root) - 1,
-                                root_level(R_root) - 1);
-
-        // Tear down: unregister before _done so the GC never walks a freed
-        // table, then free the table (BddCache_done) and the header itself.
-        MtbddCache_registry_unregister(c);
-        BddCache_done(c);
-        free(c);
-        return res;
+        return lockstep(lockstep,
+                        L_root, R_root,
+                        root_level(L_root) - 1,
+                        root_level(R_root) - 1);
     };
 
     return fn;
