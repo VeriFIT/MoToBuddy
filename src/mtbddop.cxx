@@ -53,9 +53,11 @@ NodeOp mtbdd_with_traverse_to(int target_level,
                               Branch action_on) {
 
     return [=](BDD root) -> BDD {
-        BddCache cache_obj;
-        BddCache_init(&cache_obj, mtbdd_cache_operation.tablesize / 8);
-        BddCache *c = &cache_obj; 
+        BddCache* c = (BddCache*)malloc(sizeof(BddCache));
+        BddCache_init(c, mtbdd_cache_operation.tablesize / 8);
+        if (!c) {
+            throw std::runtime_error("Failed to allocate BddCache");
+        }
         MtbddCache_registry_register(c);
 
         auto traverse = [&](auto& self, BDD node, int parent_level) -> BDD {
@@ -163,9 +165,11 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
     std::function<BDDPair(BDD, BDD)> fn =
         [=](BDD L_root, BDD R_root) -> BDDPair {
 
-        BddCache cache_obj;
-        BddCache_init(&cache_obj, mtbdd_cache_operation.tablesize / 8);
-        BddCache *c = &cache_obj;
+        BddCache *c = (BddCache*)malloc(sizeof(BddCache));
+        if (!c) {
+            throw std::runtime_error("Failed to allocate BddCache");
+        }
+        BddCache_init(c, mtbdd_cache_operation.tablesize / 8);
         MtbddCache_registry_register(c);
 
         auto virt_node = [&](BDD node, int parent_lv, Branch pref) -> BDD {
