@@ -292,7 +292,6 @@ static void mtbdd_operator_noderesize(void)
       BddCache_resize(&mtbdd_cache_apply, newcachesize);
       BddCache_resize(&mtbdd_cache_ite, newcachesize);
       BddCache_resize(&mtbdd_cache_operation, newcachesize);
-      MtbddCache_registry_resize_all(newcachesize);
    }
 }
 
