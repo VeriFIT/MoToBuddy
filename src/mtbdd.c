@@ -509,18 +509,18 @@ BDD mtbdd_apply_param_rec(BDD l, BDD r, void*(*op)(void*, void*, size_t), size_t
     }
     else{
       if(LEVEL(l) == LEVEL(r)){
-         PUSHREF(mtbdd_apply_rec(LOW(l), LOW(r), op));
-         PUSHREF(mtbdd_apply_rec(HIGH(l), HIGH(r), op));
+         PUSHREF(mtbdd_apply_param_rec(LOW(l), LOW(r), op, param));
+         PUSHREF(mtbdd_apply_param_rec(HIGH(l), HIGH(r), op, param));
          res = bdd_makenode(LEVEL(l), READREF(2), READREF(1));
       }
       else if(LEVEL(l) < LEVEL(r)){
-            PUSHREF(mtbdd_apply_rec(LOW(l), r, op));
-            PUSHREF(mtbdd_apply_rec(HIGH(l), r, op));
+            PUSHREF(mtbdd_apply_param_rec(LOW(l), r, op, param));
+            PUSHREF(mtbdd_apply_param_rec(HIGH(l), r, op, param));
             res = bdd_makenode(LEVEL(l), READREF(2), READREF(1));
       }
       else{
-            PUSHREF(mtbdd_apply_rec(l, LOW(r), op));
-            PUSHREF(mtbdd_apply_rec(l, HIGH(r), op));
+            PUSHREF(mtbdd_apply_param_rec(l, LOW(r), op, param));
+            PUSHREF(mtbdd_apply_param_rec(l, HIGH(r), op, param));
             res = bdd_makenode(LEVEL(r), READREF(2), READREF(1));
       }
 
@@ -1080,11 +1080,11 @@ BDD mtbdd_operation_param(BDD operand,
                         BDD(*op)(size_t, BDD, BDD, size_t), 
                         size_t param) {
    CHECKa(operand, bddfalse);
-   return mtbdd_operation_rec_param(operand, controls, controlNum, op, param);
+   return mtbdd_operation_param_rec(operand, controls, controlNum, op, param);
 }
 
 
-BDD mtbdd_operation_rec_param(BDD operand, 
+BDD mtbdd_operation_param_rec(BDD operand, 
                            size_t* controls, 
                            size_t controlNum, 
                            BDD(*op)(size_t, BDD, BDD, size_t), 
@@ -1123,15 +1123,15 @@ BDD mtbdd_operation_rec_param(BDD operand,
       res = op(control, LOW(targetDD), HIGH(targetDD), param);
    }
    else if (LEVEL(targetDD) == control) {
-      PUSHREF(mtbdd_operation_rec_param(HIGH(targetDD), controls + 1, controlNum - 1, op, param));
+      PUSHREF(mtbdd_operation_param_rec(HIGH(targetDD), controls + 1, controlNum - 1, op, param));
       res = bdd_makenode(control, LOW(targetDD), READREF(1));
       POPREF(1);
    }
    else if (LEVEL(targetDD) < control) {
       BDD oldLow = LOW(targetDD);
       BDD oldHigh = HIGH(targetDD);
-      PUSHREF(mtbdd_operation_rec_param(LOW(targetDD), controls, controlNum, op, param)); // low
-      PUSHREF(mtbdd_operation_rec_param(HIGH(targetDD), controls, controlNum, op, param)); // high
+      PUSHREF(mtbdd_operation_param_rec(LOW(targetDD), controls, controlNum, op, param)); // low
+      PUSHREF(mtbdd_operation_param_rec(HIGH(targetDD), controls, controlNum, op, param)); // high
       if (READREF(2) == oldLow &&
       READREF(1) == oldHigh) {
          res = targetDD; // no change
