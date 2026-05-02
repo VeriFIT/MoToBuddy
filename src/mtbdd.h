@@ -94,6 +94,16 @@ BDD mtbdd_cube2(int value, int width, BDD *variables, BDD leaf1, BDD leaf0);
 BDD mtbdd_operation(BDD operand, size_t* controls, size_t controlNum, BDD(*op)(size_t, BDD, BDD));
 BDD mtbdd_operation_rec(BDD operand, size_t* controls, size_t controlNum, BDD(*op)(size_t, BDD, BDD));
 BDD mtbdd_operation_guarded(BDD operand, size_t* controls, size_t controlNum, BDD(*op)(size_t, BDD));
+BDD mtbdd_operation_param(BDD operand, 
+                        size_t *controls, 
+                        size_t controlNum, 
+                        BDD(*op)(size_t, BDD, BDD, size_t), 
+                        size_t param);
+BDD mtbdd_operation_param_rec(BDD operand, 
+                        size_t *controls, 
+                        size_t controlNum, 
+                        BDD(*op)(size_t, BDD, BDD, size_t), 
+                        size_t param);
 void mtbdd_IndexStackPush(mtbddValues *vals, int index);
 int  mtbdd_IndexStackPop(mtbddValues *vals);
 void mtbdd_IndexStackFree(mtbddValues *vals);

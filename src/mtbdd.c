@@ -1074,6 +1074,79 @@ BDD mtbdd_operation_rec(BDD operand, size_t* controls, size_t controlNum, BDD(*o
    return res;
 }
 
+BDD mtbdd_operation_param(BDD operand, 
+                        size_t *controls, 
+                        size_t controlNum, 
+                        BDD(*op)(size_t, BDD, BDD, size_t), 
+                        size_t param) {
+   CHECKa(operand, bddfalse);
+   return mtbdd_operation_rec_param(operand, controls, controlNum, op, param);
+}
+
+
+BDD mtbdd_operation_rec_param(BDD operand, 
+                           size_t* controls, 
+                           size_t controlNum, 
+                           BDD(*op)(size_t, BDD, BDD, size_t), 
+                           size_t param) {
+   CHECKa(operand, bddfalse); // sanity check
+   if (operand == bdd_false()) { return bdd_false(); }
+   if (op == NULL) {
+      printf("Error: NULL operation passed to mtbdd_operation.\n");
+      bdd_error(BDD_OP);
+      return bddfalse;
+   }
+
+   size_t control = controls[0];
+   
+   BddCacheData *entry = BddCache_lookup(&mtbdd_cache_operation, TRIPLE(PAIR(operand, control),(int)param, (int)(size_t)op));
+   if (BddCache_is_valid(&mtbdd_cache_operation, entry) &&
+      entry->a == operand &&
+      entry->b == control &&
+      entry->c == (int)(size_t)op &&
+      entry->d == (int)param) {
+      return entry->r.res;
+   }
+
+   BDD targetDD = operand;
+   if (LEVEL(targetDD) > control || ISTERMINAL(targetDD) || ISCONST(targetDD)) {
+      checkSameChildren = 0;
+      PUSHREF(operand);
+      targetDD = bdd_makenode(control, READREF(1), READREF(1));
+      checkSameChildren = 1;
+      POPREF(1);
+   }
+
+   BDD res;
+
+   if (LEVEL(targetDD) == control && controlNum == 0) {
+      res = op(control, LOW(targetDD), HIGH(targetDD), param);
+   }
+   else if (LEVEL(targetDD) == control) {
+      PUSHREF(mtbdd_operation_rec_param(HIGH(targetDD), controls + 1, controlNum - 1, op, param));
+      res = bdd_makenode(control, LOW(targetDD), READREF(1));
+      POPREF(1);
+   }
+   else if (LEVEL(targetDD) < control) {
+      BDD oldLow = LOW(targetDD);
+      BDD oldHigh = HIGH(targetDD);
+      PUSHREF(mtbdd_operation_rec_param(LOW(targetDD), controls, controlNum, op, param)); // low
+      PUSHREF(mtbdd_operation_rec_param(HIGH(targetDD), controls, controlNum, op, param)); // high
+      if (READREF(2) == oldLow &&
+      READREF(1) == oldHigh) {
+         res = targetDD; // no change
+      } else {
+         res = bdd_makenode(LEVEL(targetDD), READREF(2), 
+         READREF(1));
+      }
+      POPREF(2);
+
+   } else {
+      res = targetDD;
+   }
+   BddCache_store4(entry, &mtbdd_cache_operation, operand, control, (int)(size_t)op, (int)param, res);
+   return res;
+}
 
 /**
  * @brief Extended version of mtbdd_operation allowing user-defined guarded recursion.
