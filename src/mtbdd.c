@@ -15,6 +15,31 @@ int       (*customCompare)(void *, void *) = NULL;
 void      (*customFree)(void *);
 
 #define NODEHASH(lvl,l,h) (((TRIPLE(lvl,l,h) % bddnodesize) + 2) % bddnodesize)
+#define ISMTBDDLEAF(a) (ISTERMINAL(a) || ISCONST(a))
+
+/* Hash the full controls vector (length controlNum+1: controls + target). */
+static int mtbdd_controls_cachekey(size_t *controls, size_t controlNum)
+{
+   int key = (int)controlNum;
+   size_t i;
+   for (i = 0; i <= controlNum; i++)
+      key = PAIR(key, (int)controls[i]);
+   return key;
+}
+
+/* Release a temporary CUSTOM leaf value (apply reuse / maketerminal dedup).
+ * freefun frees internal payload only; MoToBuddy always free()s the outer
+ * pointer afterward (MoToMedusa freePimpl contract). */
+static void mtbdd_release_temp_value(void *value, mtbdd_terminal_type type)
+{
+   mtbdd_terminal_free_function_t freefun;
+   if (value == NULL) return;
+   freefun = CUSTOMFREE(type);
+   if (freefun)
+      freefun(value);
+   free(value);
+}
+
 int mtbdd_init(int initnodesize, int cs) {
    mtbdd = 1;
    return bdd_init(initnodesize, cs);
@@ -79,7 +104,11 @@ int mtbdd_maketerminal(void *value, mtbdd_terminal_type type) {
          if(hashfun){custom = hashfun(value);}
          unsigned hash = NODEHASH(MAXLEVEL, custom, 42); // 42 is a placeholder
          foundTerminal = mtbdd_findterminal(value, hash, type);
-         if(foundTerminal != -1){return foundTerminal;}
+         if(foundTerminal != -1){
+            /* Duplicate: free the unused new value only (never the live stored one). */
+            mtbdd_release_temp_value(value, type);
+            return foundTerminal;
+         }
          
          mtbdd_insertvalue(value);
 
@@ -167,7 +196,6 @@ int mtbdd_insertvalue(void *value){
             mtbddmaxTerminalSize = INITIAL_TERMINAL_SIZE;
          }
          if (mtbddTerminalUsed == mtbddmaxTerminalSize) {
-            printf("reallocating terminals");
             size_t old_size = mtbddmaxTerminalSize;
 
             void **newPtr = realloc(mtbddterminalVals.customPointers, mtbddmaxTerminalSize * 2 * sizeof(void*));
@@ -208,12 +236,14 @@ int mtbdd_insertvalue(void *value){
  */
 int mtbdd_findterminal(void *value, unsigned hash, mtbdd_terminal_type type){
    int res = bddnodes[hash].hash;
-   unsigned index = bddnodes[res].index;
-   if(index > mtbddTerminalUsed || index < 0){return -1;} // invalid index
    int count = 0;
    while(res != 0)
    {
       unsigned index = bddnodes[res].index;
+      if (index >= (unsigned)mtbddmaxTerminalSize) {
+         res = bddnodes[res].next;
+         continue;
+      }
       switch(domaintype){
          case LONGVAL:
             if (*(long*)value == mtbddterminalVals.longValues[index]) {
@@ -234,11 +264,12 @@ int mtbdd_findterminal(void *value, unsigned hash, mtbdd_terminal_type type){
                bdd_error(BDD_OP);
                return bddfalse;
             }
-            if (index < mtbddmaxTerminalSize && 
-               type == bddnodes[res].type &&
+            if (type == bddnodes[res].type &&
                cmp(value, mtbddterminalVals.customPointers[index])) {
                return res;
             }
+            break;
+         default:
             break;
       }
       count++;
@@ -273,10 +304,15 @@ unsigned mtbdd_terminal_hash_gbc(void *value, mtbdd_terminal_type type){
          unsigned highDouble = (unsigned)((doubleBits >> 32) & 0xFFFFFFFF);
          return NODEHASH(MAXLEVEL, lowDouble, highDouble);
 
-      case CUSTOM:
+      case CUSTOM: {
          mtbdd_terminal_hash_function_t hashfun = CUSTOMHASH(type);
-         unsigned hash = NODEHASH(MAXLEVEL, hashfun(value), 42); 
-         return hash;
+         unsigned custom = 42;
+         if (hashfun)
+            custom = hashfun(value);
+         return NODEHASH(MAXLEVEL, custom, 42);
+      }
+      default:
+         return NODEHASH(MAXLEVEL, 42, 42);
    }
 }
 
@@ -374,7 +410,7 @@ BDD mtbdd_apply_rec(BDD l, BDD r, void*(*op)(void*, void*)) {
        && entry->a == l && entry->b == r && entry->c == (int)(size_t)op){
         return entry->r.res;
     }
-    if((ISTERMINAL(l) || ISZERO(l)) && (ISZERO(r) || ISTERMINAL(r))){
+    if(ISMTBDDLEAF(l) && ISMTBDDLEAF(r)){
         void *terminalValueL = mtbdd_getTerminalValue(l);
         void *terminalValueR = mtbdd_getTerminalValue(r);
         mtbdd_terminal_type terminalTypeL = mtbdd_get_terminal_type(l);
@@ -382,29 +418,25 @@ BDD mtbdd_apply_rec(BDD l, BDD r, void*(*op)(void*, void*)) {
 
         mtbdd_terminal_type decidingTerminalType;
 
-        if (l == bdd_false()) decidingTerminalType = terminalTypeR;
+        if (ISCONST(l)) decidingTerminalType = terminalTypeR;
         else decidingTerminalType = terminalTypeL;
 
-        if (terminalTypeL != terminalTypeR
-            && r != bdd_false() && l != bdd_false()) {
+        if (!ISCONST(l) && !ISCONST(r) && terminalTypeL != terminalTypeR) {
          printf("Mismatch of terminal types in APPLY. %d-%d %d-%d\n", l, terminalTypeL, r, terminalTypeR); // TODO CUSTOM ERROR
         }
         void *resultValue = op(terminalValueL,terminalValueR );
         if (resultValue == NULL) {return bdd_false();}
         mtbdd_terminal_compare_function_t cmp = CUSTOMCOMPARE(decidingTerminalType);
-        mtbdd_terminal_free_function_t freeterminal = CUSTOMFREE(decidingTerminalType);
         if (cmp == NULL) {
          printf("Missing custom compare for type %d.\n", decidingTerminalType);
          bdd_error(BDD_OP);
         }
         if (cmp(resultValue, terminalValueL)) {
-            if (freeterminal) freeterminal(resultValue);
-            free(resultValue);
+            mtbdd_release_temp_value(resultValue, decidingTerminalType);
             return l;
         }
         if(cmp(resultValue, terminalValueR)) {
-            if (freeterminal) freeterminal(resultValue);
-            free(resultValue);
+            mtbdd_release_temp_value(resultValue, decidingTerminalType);
           return r;
         }
         res = (mtbdd_maketerminal(resultValue, decidingTerminalType));
@@ -469,7 +501,7 @@ BDD mtbdd_apply_param_rec(BDD l, BDD r, void*(*op)(void*, void*, size_t), size_t
        && entry->a == l && entry->b == r && entry->c == (int)(size_t)op && entry->d == (int)param){
         return entry->r.res;
     }
-    if((ISTERMINAL(l) || ISZERO(l)) && (ISZERO(r) || ISTERMINAL(r))){
+    if(ISMTBDDLEAF(l) && ISMTBDDLEAF(r)){
         void *terminalValueL = mtbdd_getTerminalValue(l);
         void *terminalValueR = mtbdd_getTerminalValue(r);
         mtbdd_terminal_type terminalTypeL = mtbdd_get_terminal_type(l);
@@ -477,29 +509,25 @@ BDD mtbdd_apply_param_rec(BDD l, BDD r, void*(*op)(void*, void*, size_t), size_t
 
         mtbdd_terminal_type decidingTerminalType;
 
-        if (l == bdd_false()) decidingTerminalType = terminalTypeR;
+        if (ISCONST(l)) decidingTerminalType = terminalTypeR;
         else decidingTerminalType = terminalTypeL;
 
-        if (terminalTypeL != terminalTypeR
-            && r != bdd_false() && l != bdd_false()) {
+        if (!ISCONST(l) && !ISCONST(r) && terminalTypeL != terminalTypeR) {
          printf("Mismatch of terminal types in APPLY. %d-%d %d-%d\n", l, terminalTypeL, r, terminalTypeR);
         }
         void *resultValue = op(terminalValueL,terminalValueR, param);
         if (resultValue == NULL) {return bdd_false();}
         mtbdd_terminal_compare_function_t cmp = CUSTOMCOMPARE(decidingTerminalType);
-        mtbdd_terminal_free_function_t freeterminal = CUSTOMFREE(decidingTerminalType);
         if (cmp == NULL) {
          printf("Missing custom compare for type %d.\n", decidingTerminalType);
          bdd_error(BDD_OP);
         }
         if (cmp(resultValue, terminalValueL)) {
-            if (freeterminal) freeterminal(resultValue);
-            free(resultValue);
+            mtbdd_release_temp_value(resultValue, decidingTerminalType);
             return l;
         }
         if(cmp(resultValue, terminalValueR)) {
-            if (freeterminal) freeterminal(resultValue);
-            free(resultValue);
+            mtbdd_release_temp_value(resultValue, decidingTerminalType);
           return r;
         }
         res = (mtbdd_maketerminal(resultValue, decidingTerminalType));
@@ -579,7 +607,7 @@ BDD mtbdd_apply_guarded_rec(BDD l, BDD r, BDD(*op)(BDD, BDD)) {
       && entry->a == l && entry->b == r && entry->c == (int)(size_t)op){
       return entry->r.res;
    }
-   if((ISTERMINAL(l) || ISZERO(l)) && (ISZERO(r) || ISTERMINAL(r))){
+   if(ISMTBDDLEAF(l) && ISMTBDDLEAF(r)){
       res = op(l, r);
    }
    else {
@@ -633,7 +661,7 @@ BDD mtbdd_apply_guarded_param_rec(BDD l, BDD r, BDD(*op)(BDD, BDD, size_t), size
       return entry->r.res;
    }
 
-   if((ISTERMINAL(l) || ISZERO(l)) && (ISZERO(r) || ISTERMINAL(r))){
+   if(ISMTBDDLEAF(l) && ISMTBDDLEAF(r)){
       res = op(l, r, param);
    }
    else {
@@ -656,7 +684,7 @@ BDD mtbdd_apply_guarded_param_rec(BDD l, BDD r, BDD(*op)(BDD, BDD, size_t), size
       POPREF(2);
    }
    // add reference to cache
-   BddCache_store4(entry, &mtbdd_cache_apply, l, r, (int)param, (int)(size_t)op, res);
+   BddCache_store4(entry, &mtbdd_cache_apply, l, r, (int)(size_t)op, (int)param, res);
    return res;
 }
 
@@ -683,19 +711,17 @@ BDD mtbdd_apply_unary_rec(BDD l, void*(*op)(void*)) {
         return entry->r.res;
     }
 
-    if (ISTERMINAL(l) || ISZERO(l)) {
+    if (ISMTBDDLEAF(l)) {
         void *terminalValue = mtbdd_getTerminalValue(l);
         mtbdd_terminal_type terminalType = mtbdd_get_terminal_type(l);
         void *resultValue = op(terminalValue);
         mtbdd_terminal_compare_function_t cmp = CUSTOMCOMPARE(terminalType);
-        mtbdd_terminal_free_function_t freeterminal = CUSTOMFREE(terminalType);
         if (cmp == NULL) {
          printf("Custom compare missing for type %d.\n", terminalType);
          bdd_error(BDD_OP);
         }
         if (cmp(resultValue, terminalValue)) {
-            if (freeterminal) freeterminal(resultValue);
-            free(resultValue);
+            mtbdd_release_temp_value(resultValue, terminalType);
             return l;
         }
         res = (mtbdd_maketerminal(resultValue, terminalType));
@@ -736,19 +762,17 @@ BDD mtbdd_apply_unary_param_rec(BDD l, void*(*op)(void*, size_t), size_t param) 
         return entry->r.res;
     }
 
-    if (ISTERMINAL(l) || ISZERO(l)) {
+    if (ISMTBDDLEAF(l)) {
         void *terminalValue = mtbdd_getTerminalValue(l);
         mtbdd_terminal_type terminalType = mtbdd_get_terminal_type(l);
         void *resultValue = op(terminalValue, param);
         mtbdd_terminal_compare_function_t cmp = CUSTOMCOMPARE(terminalType);
-        mtbdd_terminal_free_function_t freeterminal = CUSTOMFREE(terminalType);
         if (cmp == NULL) {
          printf("Custom compare missing for type %d.\n", terminalType);
          bdd_error(BDD_OP);
         }
         if (cmp(resultValue, terminalValue)) {
-            if (freeterminal) freeterminal(resultValue);
-            free(resultValue);
+            mtbdd_release_temp_value(resultValue, terminalType);
             return l;
         }
         res = (mtbdd_maketerminal(resultValue, terminalType));
@@ -767,23 +791,40 @@ BDD mtbdd_apply_unary_param_rec(BDD l, void*(*op)(void*, size_t), size_t param) 
 }
 
 void mtbdd_delete_terminal(BddNode *terminal){
+   if (terminal == NULL || terminal->level != MAXLEVEL)
+      return;
+   if (!DOMAIN_NOT_SHORT)
+      return;
+
    switch(domaintype){
 
       case LONGVAL:
       case DOUBLEVAL:
+         if (terminal->index >= (unsigned)mtbddmaxTerminalSize)
+            return;
          mtbdd_IndexStackPush(&mtbddterminalVals,terminal->index);
          mtbddTerminalUsed--;
          return;
 
-      case CUSTOM:
+      case CUSTOM: {
+         /* Free-list nodes have low == -1, which overlays type as 0xFFFFFFFF. */
+         if (terminal->type >= (unsigned)mtbdd_terminal_type_number)
+            return;
+         if (terminal->index >= (unsigned)mtbddmaxTerminalSize)
+            return;
+         void *ptr = mtbddterminalVals.customPointers[terminal->index];
+         if (ptr == NULL)
+            return; /* already reclaimed */
          mtbdd_terminal_free_function_t freeterminal = CUSTOMFREE(terminal->type);
-         if (freeterminal) {
-            freeterminal(mtbddterminalVals.customPointers[terminal->index]);
-         }
-         free(mtbddterminalVals.customPointers[terminal->index]);
+         /* freefun frees internal payload only; always free the outer pointer. */
+         if (freeterminal)
+            freeterminal(ptr);
+         free(ptr);
          mtbddterminalVals.customPointers[terminal->index] = NULL;
          mtbdd_IndexStackPush(&mtbddterminalVals,terminal->index);
          mtbddTerminalUsed--;
+         return;
+      }
 
       default:
          return;
@@ -900,23 +941,20 @@ BDD mtbdd_ite_rec(BDD f, BDD g, BDD h){
    BddCacheData *entry;
    BDD res;
    
-   if(ISTERMINAL(f)){
-      return f;
-   }
+   if (ISZERO(f))
+      return h;
+   if (ISONE(f))
+      return g;
    if(g == h){
       return g;
    }
    if(ISTERMINAL(g) && ISTERMINAL(h)){
-      if(LOW(f) != g || HIGH(f) != h){
-         mtbdd_set_decision(f,g,h);
-      }   
-      return f;
-      
+      return bdd_makenode(LEVEL(f), g, h);
    }
 
    entry = BddCache_lookup(&mtbdd_cache_ite, TRIPLE(f,g,h));
    if(BddCache_is_valid(&mtbdd_cache_ite, entry) &&
-      entry->a == g && entry->b == g && entry->c == h){
+      entry->a == f && entry->b == g && entry->c == h){
       return entry->r.res;
    }
 
@@ -1026,11 +1064,11 @@ BDD mtbdd_operation_rec(BDD operand, size_t* controls, size_t controlNum, BDD(*o
    }
 
    size_t control = controls[0];
+   int controls_key = mtbdd_controls_cachekey(controls, controlNum);
    
-   BddCacheData *entry = BddCache_lookup(&mtbdd_cache_operation, TRIPLE(operand, control, (int)(size_t)op));
-   size_t hash = TRIPLE(operand, control, (int)(size_t)op);
+   BddCacheData *entry = BddCache_lookup(&mtbdd_cache_operation, TRIPLE(operand, controls_key, (int)(size_t)op));
    if (BddCache_is_valid(&mtbdd_cache_operation, entry) &&
-      entry->a == operand && entry->b == control && entry->c == (int)(size_t)op) {
+      entry->a == operand && entry->b == controls_key && entry->c == (int)(size_t)op) {
       return entry->r.res;
    }
 
@@ -1070,7 +1108,7 @@ BDD mtbdd_operation_rec(BDD operand, size_t* controls, size_t controlNum, BDD(*o
    } else {
       res = targetDD;
    }
-   BddCache_store(entry, &mtbdd_cache_operation, operand, control, (int)(size_t)op, res);
+   BddCache_store(entry, &mtbdd_cache_operation, operand, controls_key, (int)(size_t)op, res);
    return res;
 }
 
@@ -1098,11 +1136,12 @@ BDD mtbdd_operation_param_rec(BDD operand,
    }
 
    size_t control = controls[0];
+   int controls_key = mtbdd_controls_cachekey(controls, controlNum);
    
-   BddCacheData *entry = BddCache_lookup(&mtbdd_cache_operation, TRIPLE(PAIR(operand, control),(int)param, (int)(size_t)op));
+   BddCacheData *entry = BddCache_lookup(&mtbdd_cache_operation, TRIPLE(PAIR(operand, controls_key),(int)param, (int)(size_t)op));
    if (BddCache_is_valid(&mtbdd_cache_operation, entry) &&
       entry->a == operand &&
-      entry->b == control &&
+      entry->b == controls_key &&
       entry->c == (int)(size_t)op &&
       entry->d == (int)param) {
       return entry->r.res;
@@ -1144,7 +1183,7 @@ BDD mtbdd_operation_param_rec(BDD operand,
    } else {
       res = targetDD;
    }
-   BddCache_store4(entry, &mtbdd_cache_operation, operand, control, (int)(size_t)op, (int)param, res);
+   BddCache_store4(entry, &mtbdd_cache_operation, operand, controls_key, (int)(size_t)op, (int)param, res);
    return res;
 }
 
@@ -1179,6 +1218,7 @@ BDD mtbdd_operation_guarded(BDD operand, size_t* controls, size_t controlNum, BD
    }
 
    size_t control = controls[0];
+   int controls_key = mtbdd_controls_cachekey(controls, controlNum);
    
    BDD res = op(control, operand); // check if recursion needed
    
@@ -1187,10 +1227,9 @@ BDD mtbdd_operation_guarded(BDD operand, size_t* controls, size_t controlNum, BD
    }
 
    // continue recursion and general operation
-   BddCacheData *entry = BddCache_lookup(&mtbdd_cache_operation, TRIPLE(operand, control, (int)(size_t)op));
-   size_t hash = TRIPLE(operand, control, (int)(size_t)op);
+   BddCacheData *entry = BddCache_lookup(&mtbdd_cache_operation, TRIPLE(operand, controls_key, (int)(size_t)op));
    if (BddCache_is_valid(&mtbdd_cache_operation, entry) &&
-      entry->a == operand && entry->b == control && entry->c == (int)(size_t)op) {
+      entry->a == operand && entry->b == controls_key && entry->c == (int)(size_t)op) {
       return entry->r.res;
    }
 
@@ -1208,7 +1247,6 @@ BDD mtbdd_operation_guarded(BDD operand, size_t* controls, size_t controlNum, BD
       }
    }
    else if (LEVEL(targetDD) == control) {
-      targetDD;
       BDD high = bdd_addref(mtbdd_operation_guarded(HIGH(targetDD), controls + 1, controlNum - 1, op));
       res = bdd_makenode(control, LOW(targetDD), high);
       bdd_delref(high);
@@ -1231,7 +1269,7 @@ BDD mtbdd_operation_guarded(BDD operand, size_t* controls, size_t controlNum, BD
       res = targetDD;
    }
 
-   BddCache_store(entry, &mtbdd_cache_operation, operand, control, (int)(size_t)op, res);
+   BddCache_store(entry, &mtbdd_cache_operation, operand, controls_key, (int)(size_t)op, res);
    return res;
 }
 
@@ -1240,14 +1278,16 @@ BDD mtbdd_cube2(int value, int width, BDD *variables, BDD leaf1, BDD leaf0)
     BDD result = leaf1; 
 
     for (int i = width - 1; i >= 0; i--) {
-        BDD node = variables[i];
+        int level = LEVEL(variables[i]);
 
         if (value & (1 << i)) {
-
-            result = mtbdd_set_decision(node, bdd_false(), result);
+            PUSHREF(result);
+            result = bdd_makenode(level, leaf0, READREF(1));
+            POPREF(1);
         } else {
-
-            result = mtbdd_set_decision(node, result, bdd_false());
+            PUSHREF(result);
+            result = bdd_makenode(level, READREF(1), leaf0);
+            POPREF(1);
         }
     }
     return result;
