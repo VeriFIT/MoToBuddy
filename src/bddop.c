@@ -236,9 +236,6 @@ void bdd_operator_done(void)
    BddCache_done(&appexcache);
    BddCache_done(&replacecache);
    BddCache_done(&misccache);
-   BddCache_done(&mtbdd_cache_apply);
-   BddCache_done(&mtbdd_cache_ite);
-   BddCache_done(&mtbdd_cache_operation);
    mtbdd_operator_done();
 
    if (supportSet != NULL)
@@ -262,9 +259,6 @@ void bdd_operator_reset(void)
    BddCache_reset(&appexcache);
    BddCache_reset(&replacecache);
    BddCache_reset(&misccache);
-   BddCache_reset(&mtbdd_cache_apply);
-   BddCache_reset(&mtbdd_cache_ite);
-   BddCache_reset(&mtbdd_cache_operation);
    mtbdd_operator_reset();
 }
 
@@ -307,9 +301,6 @@ static void bdd_operator_noderesize(void)
       BddCache_resize(&appexcache, newcachesize);
       BddCache_resize(&replacecache, newcachesize);
       BddCache_resize(&misccache, newcachesize);
-      BddCache_resize(&mtbdd_cache_apply, newcachesize);
-      BddCache_resize(&mtbdd_cache_ite, newcachesize);
-      BddCache_resize(&mtbdd_cache_operation, newcachesize);
       mtbdd_operator_noderesize();
    }
 }

@@ -1,0 +1,76 @@
+MoToBuddy MTBDD test suite
+
+== terminal types & interning ==
+PASS: distinct terminal type ids
+PASS: at least two types registered
+PASS: maketerminal produces ISTERMINAL node
+PASS: equal values intern to same node
+PASS: distinct values are distinct nodes
+PASS: getTerminalValue returns stored int
+PASS: terminal type preserved
+PASS: NULL value maps to constant 0
+
+== LONG / DOUBLE domains ==
+PASS: LONGVAL interns equal values
+PASS: LONGVAL value roundtrip
+PASS: DOUBLEVAL interns equal values
+PASS: DOUBLEVAL value roundtrip
+
+== apply (binary / unary / param) ==
+PASS: apply add on leaves
+PASS: apply mul on leaves
+PASS: apply reuses left when result equals left
+PASS: apply_unary neg
+PASS: apply_param add+10
+PASS: apply preserves internal level
+PASS: apply recurses on children
+PASS: leaf_count on apply result
+
+== apply_guarded ==
+PASS: apply_guarded short-circuits to left leaves
+
+== mtbdd_ite ==
+PASS: ite(f,g,g) returns g
+PASS: ite(f,g,h) builds new node and does not mutate f
+PASS: ite(false,g,h) returns h
+PASS: ite(true,g,h) returns g
+PASS: ite cache hit returns same node for identical (f,g,h)
+PASS: ite with different f does not reuse wrong cache entry
+
+== mtbdd_operation ==
+PASS: built 4-leaf tree
+PASS: operation swaps level-0 children (controlNum==0)
+PASS: operation leaves inactive control branch unchanged
+PASS: operation transforms HIGH branch at target
+PASS: operation cache distinguishes controlNum / full controls[]
+
+== mtbddop combinators ==
+PASS: mtbdd_make_swap exchanges LOW/HIGH
+PASS: traverse_to CX keeps inactive branch
+PASS: traverse_to CX swaps under active control
+PASS: mtbdd_get_side(R) returns HIGH
+
+== constants vs ISTERMINAL ==
+PASS: bddfalse is not ISTERMINAL after setvarnum
+PASS: bddtrue is not ISTERMINAL after setvarnum
+PASS: ISZERO only for bddfalse
+PASS: apply treats bddfalse as zero leaf
+PASS: apply treats bddtrue as leaf (NULL value → 0 in op_add)
+
+== freefun ownership contract ==
+PASS: reuse path with freefun does not crash
+PASS: freefun called on unused apply result
+PASS: maketerminal dedups equal CUSTOM values
+PASS: dedup frees unused new value via freefun
+
+== mtbdd_cube2 ==
+PASS: cube2 does not mutate variable nodes
+PASS: cube2 returns an internal node at first var level
+
+== re-init / done ==
+PASS: terminal before done
+PASS: re-init after done works
+
+----------------------------------------
+passed=49 failed=0 xfailed=0
+All tests passed.

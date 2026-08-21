@@ -22,6 +22,8 @@ void MtbddCache_registry_resize_all(int newsize) {
 
 void MtbddCache_registry_register(BddCache *c) {
     CacheNode *node = malloc(sizeof(CacheNode));
+    if (!node)
+        return;
     node->cache = c;
     node->next  = g_cache_registry.head;
     g_cache_registry.head = node;
