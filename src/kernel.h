@@ -129,6 +129,7 @@ extern int*         bddrefstack;        /* Internal node reference stack */
 extern int*         bddrefstacktop;     /* Internal node reference stack top */
 extern int          mtbddTerminalUsed;  /* Number of allocated terminal values */
 extern int          mtbddmaxTerminalSize;
+extern int          mtbddLastValueIndex;
 extern int*         bddvar2level;
 extern int*         bddlevel2var;
 extern jmp_buf      bddexception;

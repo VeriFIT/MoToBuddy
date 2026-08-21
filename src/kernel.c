@@ -267,20 +267,41 @@ void bdd_done(void)
    bdd_reorder_done();
    bdd_pairs_done();
    for (int i = 0; i < bddnodesize; i++) {
-      BddNode node = bddnodes[i];
-      if(LEVELp(&node) == MAXLEVEL){mtbdd_delete_terminal(&node);}
+      BddNode *node = &bddnodes[i];
+      /* Only reclaim live MTBDD terminals; skip free-list slots (low == -1). */
+      if (LEVELp(node) == MAXLEVEL && LOWp(node) != -1)
+         mtbdd_delete_terminal(node);
    }
    free(bddnodes);
    free(bddrefstack);
    free(bddvarset);
    free(bddvar2level);
    free(bddlevel2var);
-   free(mtbddterminalVals.doubleValues);
+   /* mtbddterminalVals.*Values share one union — free the active domain once. */
+   switch (domaintype) {
+      case LONGVAL:
+         free(mtbddterminalVals.longValues);
+         break;
+      case DOUBLEVAL:
+         free(mtbddterminalVals.doubleValues);
+         break;
+      case CUSTOM:
+         free(mtbddterminalVals.customPointers);
+         break;
+      default:
+         free(mtbddterminalVals.doubleValues);
+         break;
+   }
+   mtbdd_IndexStackFree(&mtbddterminalVals);
    
    bddnodes = NULL;
    bddrefstack = NULL;
    bddvarset = NULL;
    mtbddterminalVals.doubleValues = NULL;
+   mtbddterminalVals.top = NULL;
+   mtbddTerminalUsed = 0;
+   mtbddmaxTerminalSize = 0;
+   mtbddLastValueIndex = 0;
 
    if (mtbdd) {
       mtbdd_operator_done();
