@@ -42,6 +42,8 @@
 
 #include <limits.h>
 #include <setjmp.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include "bdd.h"
 #include "terminal.h"
 
@@ -127,6 +129,7 @@ extern BddNode*     bddnodes;           /* All of the bdd nodes */
 extern int          bddvarnum;          /* Number of defined BDD variables */
 extern int*         bddrefstack;        /* Internal node reference stack */
 extern int*         bddrefstacktop;     /* Internal node reference stack top */
+extern int*         bddrefstackend;     /* One-past-end of bddrefstack */
 extern int          mtbddTerminalUsed;  /* Number of allocated terminal values */
 extern int          mtbddmaxTerminalSize;
 extern int          mtbddLastValueIndex;
@@ -205,9 +208,10 @@ extern int mtbdd_operation_invalid_value_flag;
 
    /* Stacking for garbage collector */
 #define INITREF    bddrefstacktop = bddrefstack
-#define PUSHREF(a) *(bddrefstacktop++) = (a)
+/* Nested traverse/lockstep can hold more than 2 refs per variable level. */
+#define PUSHREF(a) ((bddrefstacktop >= bddrefstackend) ? (fprintf(stderr, "bddrefstack overflow\n"), abort(), 0) : (*(bddrefstacktop++) = (a)))
 #define READREF(a) *(bddrefstacktop-(a))
-#define POPREF(a)  bddrefstacktop -= (a)
+#define POPREF(a)  do { bddrefstacktop -= (a); if (bddrefstacktop < bddrefstack) { fprintf(stderr, "bddrefstack underflow\n"); abort(); } } while (0)
 
 #define BDDONE 1
 #define BDDZERO 0

@@ -67,3 +67,10 @@ void mtbdd_register_to_str_function(mtbdd_terminal_type type, mtbdd_terminal_to_
     }
     mtbdd_terminal_functions_list[type].toStrFun = toStrFun;
 }
+
+void mtbdd_terminal_types_done(void) {
+    free(mtbdd_terminal_functions_list);
+    mtbdd_terminal_functions_list = NULL;
+    mtbdd_terminal_type_number = 0;
+    mtbdd_terminal_type_size = 0;
+}

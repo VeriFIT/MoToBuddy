@@ -100,6 +100,7 @@ long int     bddproduced;       /* Number of new nodes ever produced */
 int          bddvarnum;         /* Number of defined BDD variables */
 int*         bddrefstack;       /* Internal node reference stack */
 int*         bddrefstacktop;    /* Internal node reference stack top */
+int*         bddrefstackend;    /* One-past-end of bddrefstack */
 int*         bddvar2level;      /* Variable -> level table */
 int*         bddlevel2var;      /* Level -> variable table */
 jmp_buf      bddexception;      /* Long-jump point for interrupting calc. */
@@ -296,6 +297,8 @@ void bdd_done(void)
    
    bddnodes = NULL;
    bddrefstack = NULL;
+   bddrefstacktop = NULL;
+   bddrefstackend = NULL;
    bddvarset = NULL;
    mtbddterminalVals.doubleValues = NULL;
    mtbddterminalVals.top = NULL;
@@ -309,6 +312,7 @@ void bdd_done(void)
       bdd_operator_done();
    }
 
+   mtbdd_terminal_types_done();
 
    bddrunning = 0;
    bddnodesize = 0;
@@ -389,7 +393,17 @@ int bdd_setvarnum(int num)
 
    if (bddrefstack != NULL)
       free(bddrefstack);
-   bddrefstack = bddrefstacktop = (int*)malloc(sizeof(int)*(num*2+4));
+   /* Original BuDDy used (num*2+4). Nested C++ combinators (traverse + lockstep
+    * + extra sibling/virt PUSHREFs) can be O(n) frames deep with several refs
+    * each, so size the stack generously. */
+   {
+      size_t refstack_slots = (size_t)num * 128 + 8192;
+      bddrefstack = (int*)malloc(sizeof(int) * refstack_slots);
+      if (bddrefstack == NULL)
+         return bdd_error(BDD_MEMORY);
+      bddrefstacktop = bddrefstack;
+      bddrefstackend = bddrefstack + refstack_slots;
+   }
 
    for(bdv=bddvarnum ; bddvarnum < num; bddvarnum++)
    {
@@ -1144,6 +1158,8 @@ void bdd_gbc(void)
          }
 
          LOWp(node) = -1; // mark as invalid
+         LEVELp(node) = 0; /* so ISTERMINAL is false on freelist slots */
+         node->refcou = 0;
          
          node->next = bddfreepos;
          bddfreepos = n;
@@ -1439,6 +1455,7 @@ int bdd_makenode(unsigned int level, int low, int high)
    LEVELp(node) = level;
    LOWp(node) = low;
    HIGHp(node) = high;
+   node->refcou = 0;
    node->mark = 0;
    
       /* Insert node */

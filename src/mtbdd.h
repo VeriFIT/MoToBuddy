@@ -6,8 +6,8 @@
 #include "terminal.h"
 
 #define SETDOMAIN(d) domaintype = d
-#define ISTERMINAL(a) (bddnodes[a].level == MAXLEVEL)
-#define ISTERMINALp(p) ((p)->level == MAXLEVEL)
+#define ISTERMINAL(a) (bddnodes[a].level == MAXLEVEL && LOW(a) != -1)
+#define ISTERMINALp(p) ((p)->level == MAXLEVEL && LOWp(p) != -1)
 #define NODEHASH(lvl,l,h) (((TRIPLE(lvl,l,h) % bddnodesize) + 2) % bddnodesize)
 #define INITIAL_TERMINAL_SIZE 10000
 

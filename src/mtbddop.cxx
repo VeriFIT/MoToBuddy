@@ -3,31 +3,25 @@
  * @author Filip Novak
  *
  * Implementation of MTBDD traversal, lockstep, and swap operations.
+ *
+ * Note: per-combinator op-result caches were removed. Nesting traverse/lockstep
+ * NodeOps caused use-after-free when an outer frame kept a lookup `entry` into
+ * an inner cache table after BddCache_done (valgrind). Leaking those tables
+ * avoided the UAF but OOMed large circuits. Structural gates are correct
+ * without the op cache; BuDDy's global apply caches remain.
  */
 
 #include "mtbddop.h"
 
-#include <unordered_map>
-#include <algorithm>
-#include <memory>
+#include <assert.h>
 #include "prime.h"
 #include "mtbdd_cache_registry.h"
-#include <assert.h>
-struct OwnedCache {
-    BddCache cache;
-    bool active = false;
-    explicit OwnedCache(int size) {
-        BddCache_init(&cache, size);
-        MtbddCache_registry_register(&cache);
-    }
-    ~OwnedCache() {
-        MtbddCache_registry_unregister(&cache);
-        assert(!active && "OwnedCache destroyed while traverse is active!");
-        BddCache_done(&cache);
-    }
-    OwnedCache(const OwnedCache&)             = delete;
-    OwnedCache& operator=(const OwnedCache&) = delete;
-};
+#include "cache.h"
+
+extern "C" void mtbdd_owned_cache_flush(void)
+{
+    /* no deferred combinator caches */
+}
 
 /* -------------------------------------------------------------------------
  * Primitives
@@ -49,24 +43,7 @@ NodeOp mtbdd_with_traverse_to(int target_level,
                               Branch action_on) {
 
     return [=](BDD root) -> BDD {
-        OwnedCache oc(mtbdd_cache_operation.tablesize / 8);
-        BddCache* c = &oc.cache;
-        oc.active = true;
         auto traverse = [&](auto& self, BDD node, int parent_level) -> BDD {
-
-            // --- Cache lookup ---
-            assert(c == &oc.cache && "c pointer corrupted");
-            assert(c->table != NULL || (fprintf(stderr, "table=NULL tablesize=%d before lookup\n", c->tablesize), 0));
-            int hash = PAIR(node, parent_level);
-            BddCacheData* entry = BddCache_lookup(c, hash);
-            if (BddCache_is_valid(c, entry)
-                && entry->a == (int)node
-                && entry->b == parent_level
-                && entry->c == target_level
-                && entry->d == -1) {
-                return (BDD)entry->r.res;
-            }
-
             BDD working_node = node;
 
             if ((int)LEVEL(node) > target_level || ISCONST(node)) {
@@ -85,72 +62,76 @@ NodeOp mtbdd_with_traverse_to(int target_level,
             // --- Action at target level ---
             if ((int)LEVEL(working_node) == target_level) {
                 if (action_on == Branch::L) {
+                    PUSHREF(HIGH(working_node));
                     PUSHREF(action(LOW(working_node)));
-                    assert(c->table != NULL || (fprintf(stderr, "table=NULL tablesize=%d after action L\n", c->tablesize), 0));
                     res = bdd_makenode(LEVEL(working_node),
                                        READREF(1),
-                                       HIGH(working_node));
-                    POPREF(1);
+                                       READREF(2));
+                    POPREF(2);
                 } else if (action_on == Branch::R) {
+                    PUSHREF(LOW(working_node));
                     PUSHREF(action(HIGH(working_node)));
-                    assert(c->table != NULL || (fprintf(stderr, "table=NULL tablesize=%d after action R\n", c->tablesize), 0));
                     res = bdd_makenode(LEVEL(working_node),
-                                       LOW(working_node),
+                                       READREF(2),
                                        READREF(1));
-                    POPREF(1);
+                    POPREF(2);
                 } else { // Branch::ITSELF
                     res = action(working_node);
-                    assert(c->table != NULL || (fprintf(stderr, "table=NULL tablesize=%d after action ITSELF\n", c->tablesize), 0));
                 }
-                if (node != working_node) POPREF(1);
-                entry = BddCache_lookup(c, hash);
-                BddCache_store4(entry, c, (int)node, parent_level, target_level, -1, (int)res);
+                // Keep res live across virtual-node POPREF (refcount starts at 0).
+                PUSHREF(res);
+                if (node != working_node) {
+                    BDD kept = READREF(1);
+                    POPREF(2); // kept + virtual working_node
+                    PUSHREF(kept);
+                    res = kept;
+                }
+                POPREF(1);
                 return res;
             }
 
             // --- Descent ---
             if (pref == Branch::R) {
+                PUSHREF(LOW(working_node));
                 PUSHREF(self(self, HIGH(working_node), (int)LEVEL(working_node)));
-                assert(c->table != NULL || (fprintf(stderr, "table=NULL tablesize=%d after descent R\n", c->tablesize), 0));
                 res = bdd_makenode(LEVEL(working_node),
-                                   LOW(working_node),
+                                   READREF(2),
                                    READREF(1));
-                POPREF(1);
+                POPREF(2);
             } else if (pref == Branch::L) {
+                PUSHREF(HIGH(working_node));
                 PUSHREF(self(self, LOW(working_node), (int)LEVEL(working_node)));
-                assert(c->table != NULL || (fprintf(stderr, "table=NULL tablesize=%d after descent L\n", c->tablesize), 0));
                 res = bdd_makenode(LEVEL(working_node),
                                    READREF(1),
-                                   HIGH(working_node));
-                POPREF(1);
+                                   READREF(2));
+                POPREF(2);
             } else if (pref == Branch::RL) {
                 PUSHREF(self(self, HIGH(working_node), (int)LEVEL(working_node)));
-                assert(c->table != NULL || (fprintf(stderr, "table=NULL tablesize=%d after descent RL high\n", c->tablesize), 0));
                 PUSHREF(self(self, LOW(working_node),  (int)LEVEL(working_node)));
-                assert(c->table != NULL || (fprintf(stderr, "table=NULL tablesize=%d after descent RL low\n", c->tablesize), 0));
                 res = bdd_makenode(LEVEL(working_node), READREF(1), READREF(2));
                 POPREF(2);
             } else { // Branch::LR
                 PUSHREF(self(self, LOW(working_node),  (int)LEVEL(working_node)));
-                assert(c->table != NULL || (fprintf(stderr, "table=NULL tablesize=%d after descent LR low\n", c->tablesize), 0));
                 PUSHREF(self(self, HIGH(working_node), (int)LEVEL(working_node)));
-                assert(c->table != NULL || (fprintf(stderr, "table=NULL tablesize=%d after descent LR high\n", c->tablesize), 0));
                 res = bdd_makenode(LEVEL(working_node), READREF(2), READREF(1));
                 POPREF(2);
             }
 
-            if (node != working_node) POPREF(1);
-            entry = BddCache_lookup(c, hash);
-            BddCache_store4(entry, c, (int)node, parent_level, target_level, -1, (int)res);
+            PUSHREF(res);
+            if (node != working_node) {
+                BDD kept = READREF(1);
+                POPREF(2); // kept + virtual working_node
+                PUSHREF(kept);
+                res = kept;
+            }
+            POPREF(1);
             return res;
         };
 
         int root_level = (ISTERMINAL(root) || ISCONST(root))
                          ? bdd_varnum()
                          : (int)LEVEL(root);
-        BDD res = traverse(traverse, root, root_level - 1);
-        oc.active = false;
-        return res;
+        return traverse(traverse, root, root_level - 1);
     };
 }
 
@@ -167,9 +148,6 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
     std::function<BDDPair(BDD, BDD)> fn =
         [=](BDD L_root, BDD R_root) -> BDDPair {
 
-        OwnedCache oc(mtbdd_cache_operation.tablesize / 8);
-        BddCache* c = &oc.cache;
-        oc.active = true;
         auto virt_node = [&](BDD node, int parent_lv, Branch pref) -> BDD {
             if (!ISCONST(node) && (int)LEVEL(node) <= target_level)
                 return node;
@@ -186,20 +164,6 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
                             BDD L, BDD R,
                             int parent_lv_L,
                             int parent_lv_R) -> BDDPair {
-            
-            // --- Cache lookup ---
-            assert(c == &oc.cache && "c pointer corrupted in lockstep");
-            assert(c->table != NULL || (fprintf(stderr, "lockstep table=NULL tablesize=%d before lookup\n", c->tablesize), 0));
-            int hash = PAIR(PAIR(L, R), PAIR(parent_lv_L, parent_lv_R));
-            BddCacheData* entry = BddCache_lookup(c, hash);
-            if (BddCache_is_valid(c, entry)
-                && entry->a == L
-                && entry->b == R
-                && entry->c == parent_lv_L
-                && entry->d == parent_lv_R) {
-                return { (BDD)entry->r.res, (BDD)entry->r2 };
-            }
-
             // --- Virtualize ---
             BDD wL = (ISCONST(L) || (int)LEVEL(L) > target_level)
                      ? virt_node(L, parent_lv_L, pref_L)
@@ -207,7 +171,6 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
             bool virt_L = (wL != L);
             if (virt_L) PUSHREF(wL);
 
-            // Virtualize R if needed and protect the fresh node immediately
             BDD wR = (ISCONST(R) || (int)LEVEL(R) > target_level)
                      ? virt_node(R, parent_lv_R, pref_R)
                      : R;
@@ -216,14 +179,12 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
 
             BDDPair res;
 
-            // Fire action when both sides reach target level
             if ((int)LEVEL(wL) == target_level &&
                 (int)LEVEL(wR) == target_level) {
 
                 if (action_on_L == Branch::ITSELF &&
                     action_on_R == Branch::ITSELF) {
                     res = action(wL, wR);
-                    assert(c->table != NULL || (fprintf(stderr, "lockstep table=NULL after action ITSELF\n"), 0));
                 } else {
                     BDD in_L = (action_on_L == Branch::L) ? LOW(wL)
                               : (action_on_L == Branch::R) ? HIGH(wL)
@@ -233,7 +194,6 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
                             : wR;
 
                     auto out_pair = action(in_L, in_R);
-                    assert(c->table != NULL || (fprintf(stderr, "lockstep table=NULL after action branch\n"), 0));
                     PUSHREF(out_pair.first);
                     PUSHREF(out_pair.second);
 
@@ -250,21 +210,25 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
                                               READREF(2));
                     }
 
+                    PUSHREF(new_wL);
+
                     if (action_on_R == Branch::L) {
                         new_wR = bdd_makenode(target_level,
-                                              READREF(1),
+                                              READREF(2),
                                               HIGH(wR));
                     } else if (action_on_R == Branch::R) {
                         new_wR = bdd_makenode(target_level,
                                               LOW(wR),
-                                              READREF(1));
+                                              READREF(2));
                     }
 
-                    POPREF(2);
+                    PUSHREF(new_wR);
+                    new_wL = READREF(2);
+                    new_wR = READREF(1);
+                    POPREF(4);
                     res = BDDPair(new_wL, new_wR);
                 }
             }
-            // Both at same level above target: advance both
             else if (LEVEL(wL) == LEVEL(wR)) {
                 int lv = LEVEL(wL);
 
@@ -273,20 +237,20 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
                 BDD lo_R = (pref_R == Branch::R) ? wR : LOW(wR);
                 BDD hi_R = (pref_R == Branch::L) ? wR : HIGH(wR);
 
-                // Protect lo results before hi recursion runs
                 auto lo = self(self, lo_L, lo_R, lv, lv);
                 PUSHREF(lo.first);
                 PUSHREF(lo.second);
                 auto hi = self(self, hi_L, hi_R, lv, lv);
-                assert(c->table != NULL || (fprintf(stderr, "lockstep table=NULL after hi same level\n"), 0));
 
-                // lo.first/second may be stale after hi recursion -- use refstack
-                // READREF(2) = lo.first (pushed first), READREF(1) = lo.second
-                res = BDDPair(bdd_makenode(lv, READREF(2), hi.first),
-                              bdd_makenode(lv, READREF(1), hi.second));
-                POPREF(2);
+                PUSHREF(hi.first);
+                PUSHREF(hi.second);
+                BDD out_L = bdd_makenode(lv, READREF(4), READREF(2));
+                PUSHREF(out_L);
+                BDD out_R = bdd_makenode(lv, READREF(4), READREF(2));
+                out_L = READREF(1);
+                POPREF(5);
+                res = BDDPair(out_L, out_R);
             }
-            // L leads: parent_lv_L advances, parent_lv_R stays
             else if (LEVEL(wL) < LEVEL(wR)) {
                 int lv = LEVEL(wL);
 
@@ -297,13 +261,16 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
                 PUSHREF(lo.first);
                 PUSHREF(lo.second);
                 auto hi = self(self, hi_L, R, lv, parent_lv_R);
-                assert(c->table != NULL || (fprintf(stderr, "lockstep table=NULL after hi L leads\n"), 0));
 
-                res = BDDPair(bdd_makenode(lv, READREF(2), hi.first),
-                              bdd_makenode(lv, READREF(1), hi.second));
-                POPREF(2);
+                PUSHREF(hi.first);
+                PUSHREF(hi.second);
+                BDD out_L = bdd_makenode(lv, READREF(4), READREF(2));
+                PUSHREF(out_L);
+                BDD out_R = bdd_makenode(lv, READREF(4), READREF(2));
+                out_L = READREF(1);
+                POPREF(5);
+                res = BDDPair(out_L, out_R);
             }
-            // R leads: parent_lv_R advances, parent_lv_L stays
             else {
                 int lv = LEVEL(wR);
 
@@ -314,20 +281,32 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
                 PUSHREF(lo.first);
                 PUSHREF(lo.second);
                 auto hi = self(self, L, hi_R, parent_lv_L, lv);
-                assert(c->table != NULL || (fprintf(stderr, "lockstep table=NULL after hi R leads\n"), 0));
 
-                res = BDDPair(bdd_makenode(lv, READREF(2), hi.first),
-                              bdd_makenode(lv, READREF(1), hi.second));
-                POPREF(2);
+                PUSHREF(hi.first);
+                PUSHREF(hi.second);
+                BDD out_L = bdd_makenode(lv, READREF(4), READREF(2));
+                PUSHREF(out_L);
+                BDD out_R = bdd_makenode(lv, READREF(4), READREF(2));
+                out_L = READREF(1);
+                POPREF(5);
+                res = BDDPair(out_L, out_R);
             }
 
-            // Pop virtual nodes in reverse order of pushing (R before L)
-            if (virt_R) POPREF(1);
-            if (virt_L) POPREF(1);
+            // Lift results above virt slots before discarding virt nodes.
+            {
+                PUSHREF(res.first);
+                PUSHREF(res.second);
+                BDD r1 = READREF(2);
+                BDD r2 = READREF(1);
+                POPREF(2);
+                if (virt_R) POPREF(1);
+                if (virt_L) POPREF(1);
+                PUSHREF(r1);
+                PUSHREF(r2);
+                res = BDDPair(r1, r2);
+            }
 
-            entry = BddCache_lookup(c, hash);
-            BddCache_store_pair(entry, c, L, R, parent_lv_L, parent_lv_R, res.first, res.second);
-
+            POPREF(2);
             return res;
         };
 
@@ -335,17 +314,15 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
             return (ISTERMINAL(n) || ISCONST(n))
                    ? bdd_varnum() : (int)LEVEL(n);
         };
-        BDDPair res = lockstep(lockstep,
+        return lockstep(lockstep,
                         L_root, R_root,
                         root_level(L_root) - 1,
                         root_level(R_root) - 1);
-
-        oc.active = false;
-        return res;
     };
 
     return fn;
 }
+
 /* -------------------------------------------------------------------------
  * Swap combinators
  * ---------------------------------------------------------------------- */
@@ -354,13 +331,15 @@ BinaryNodeOp mtbdd_make_swap(SwapParam paramL, SwapParam paramR) {
     return [=](BDD L, BDD R) -> BDDPair {
         BDD offer_L = paramL.put_up(L);
         BDD offer_R = paramR.put_up(R);
+        PUSHREF(offer_L);
+        PUSHREF(offer_R);
 
-        // new_L is a freshly made node -- protect it before put_in for R
-        // which may call bdd_makenode and trigger GC
         PUSHREF(paramL.put_in(L, offer_R));
         BDD new_R = paramR.put_in(R, offer_L);
-        BDD new_L = READREF(1);
-        POPREF(1);
+        PUSHREF(new_R);
+        BDD new_L = READREF(2);
+        new_R = READREF(1);
+        POPREF(4);
 
         return BDDPair(new_L, new_R);
     };
@@ -368,7 +347,11 @@ BinaryNodeOp mtbdd_make_swap(SwapParam paramL, SwapParam paramR) {
 
 NodeOp mtbdd_make_swap() {
     return [](BDD node) -> BDD {
-        return bdd_makenode(LEVEL(node), HIGH(node), LOW(node));
+        PUSHREF(HIGH(node));
+        PUSHREF(LOW(node));
+        BDD res = bdd_makenode(LEVEL(node), READREF(2), READREF(1));
+        POPREF(2);
+        return res;
     };
 }
 

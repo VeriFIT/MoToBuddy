@@ -180,6 +180,16 @@ BinaryNodeOp mtbdd_make_swap(SwapParam paramL, SwapParam paramR);
 NodeOp mtbdd_make_swap();
 
 #endif /* __cplusplus */
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+/** Free heap tables deferred by nested combinator caches. Call from bdd_done. */
+void mtbdd_owned_cache_flush(void);
+#ifdef __cplusplus
+}
+#endif
+
 #endif /* MTBDDOP_H   */
 
 /* EOF mtbddop.h */

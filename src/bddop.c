@@ -43,6 +43,8 @@
 #include "kernel.h"
 #include "cache.h"
 #include "mtbdd_cache_registry.h"
+
+void mtbdd_owned_cache_flush(void);
    /* Hash value modifiers to distinguish between entries in misccache */
 #define CACHEID_CONSTRAIN   0x0
 #define CACHEID_RESTRICT    0x1
@@ -219,16 +221,21 @@ int bdd_operator_init(int cachesize)
 
 void mtbdd_operator_done(void)
 {
-   
+   if (quantvarset != NULL) {
+      free(quantvarset);
+      quantvarset = NULL;
+   }
    BddCache_done(&mtbdd_cache_apply);
    BddCache_done(&mtbdd_cache_ite);
    BddCache_done(&mtbdd_cache_operation);
-
+   mtbdd_owned_cache_flush();
 }
 void bdd_operator_done(void)
 {
-   if (quantvarset != NULL)
+   if (quantvarset != NULL) {
       free(quantvarset);
+      quantvarset = NULL;
+   }
    
    BddCache_done(&applycache);
    BddCache_done(&itecache);

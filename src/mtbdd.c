@@ -75,11 +75,14 @@ int mtbdd_maketerminal(void *value, mtbdd_terminal_type type) {
          foundTerminal = mtbdd_findterminal(value, hashLong, type);
          if(foundTerminal != -1){return foundTerminal;}
 
-         mtbdd_insertvalue(value);
-
-         foundTerminal = bdd_makenode(MAXLEVEL, lowLong, highLong); // create new node
-         node = &bddnodes[foundTerminal];
-         HIGHp(node)    = mtbddTerminalUsed - 1; // set high/index to index of new terminal value
+         {
+            int valIndex = mtbdd_insertvalue(value);
+            foundTerminal = bdd_makenode(MAXLEVEL, lowLong, highLong); // create new node
+            node = &bddnodes[foundTerminal];
+            /* Must use the slot from insertvalue — IndexStack may recycle holes,
+             * so mtbddTerminalUsed-1 is not the assigned index after GC. */
+            HIGHp(node) = valIndex;
+         }
 
          return foundTerminal;
 
@@ -91,11 +94,12 @@ int mtbdd_maketerminal(void *value, mtbdd_terminal_type type) {
          foundTerminal       = mtbdd_findterminal(value, hashDouble, type);
          if(foundTerminal != -1){return foundTerminal;}
 
-         mtbdd_insertvalue(value);
-
-         foundTerminal = bdd_makenode(MAXLEVEL, lowDouble, highDouble); // create new node
-         node = &bddnodes[foundTerminal];
-         HIGHp(node)   = mtbddTerminalUsed - 1; // set high/index to index of new terminal value
+         {
+            int valIndex = mtbdd_insertvalue(value);
+            foundTerminal = bdd_makenode(MAXLEVEL, lowDouble, highDouble); // create new node
+            node = &bddnodes[foundTerminal];
+            HIGHp(node) = valIndex;
+         }
          
          return foundTerminal;
       case CUSTOM:
@@ -110,13 +114,16 @@ int mtbdd_maketerminal(void *value, mtbdd_terminal_type type) {
             return foundTerminal;
          }
          
-         mtbdd_insertvalue(value);
-
-         foundTerminal = bdd_makenode(MAXLEVEL, custom, 42);
-         node = &bddnodes[foundTerminal];
-         HIGHp(node)   = mtbddTerminalUsed - 1; // set high/index to index of new terminal value
+         {
+            int valIndex = mtbdd_insertvalue(value);
+            foundTerminal = bdd_makenode(MAXLEVEL, custom, 42);
+            node = &bddnodes[foundTerminal];
+            HIGHp(node) = valIndex;
+         }
          TERMINALTYPEp(node) = type;
-         node->refcou = MAXREF;
+         /* refcou=0: collectable via mark-from-roots (same as LONG/DOUBLE).
+          * MAXREF pinned every CUSTOM leaf forever and prevented mtbdd_delete_terminal. */
+         node->refcou = 0;
          return foundTerminal;
       default:
          return -1;
@@ -126,9 +133,9 @@ int mtbdd_maketerminal(void *value, mtbdd_terminal_type type) {
 
 /**
  * @brief Inserts value into table of values for terminal nodes.
- * 
+ *
  * @param value Pointer to the value to store.
- * 
+ * @return Assigned table index, or -1 on failure.
  */
 int mtbdd_insertvalue(void *value){
 
@@ -137,7 +144,7 @@ int mtbdd_insertvalue(void *value){
       mtbddterminalVals.top = NULL;
    }
 
-   int index;
+   int index = -1;
 
    switch(domaintype){
 
@@ -201,7 +208,7 @@ int mtbdd_insertvalue(void *value){
             void **newPtr = realloc(mtbddterminalVals.customPointers, mtbddmaxTerminalSize * 2 * sizeof(void*));
             if (newPtr == NULL) {
                bdd_error(BDD_MEMORY);
-               return 0;
+               return -1;
             }
 
             // Update the pointer and size AFTER successful realloc
@@ -220,10 +227,10 @@ int mtbdd_insertvalue(void *value){
          mtbddTerminalUsed++;
          break;
       default:
-         break;
+         return -1;
    }
 
-   return 0;
+   return index;
 }
 
 /**
@@ -1084,12 +1091,17 @@ BDD mtbdd_operation_rec(BDD operand, size_t* controls, size_t controlNum, BDD(*o
    BDD res;
 
    if (LEVEL(targetDD) == control && controlNum == 0) {
-      res = op(control, LOW(targetDD), HIGH(targetDD));
+      /* Keep children alive across op()->apply/makenode GC (CUSTOM leaves are refcou=0). */
+      PUSHREF(LOW(targetDD));
+      PUSHREF(HIGH(targetDD));
+      res = op(control, READREF(2), READREF(1));
+      POPREF(2);
    }
    else if (LEVEL(targetDD) == control) {
+      PUSHREF(LOW(targetDD));
       PUSHREF(mtbdd_operation_rec(HIGH(targetDD), controls + 1, controlNum - 1, op));
-      res = bdd_makenode(control, LOW(targetDD), READREF(1));
-      POPREF(1);
+      res = bdd_makenode(control, READREF(2), READREF(1));
+      POPREF(2);
    }
    else if (LEVEL(targetDD) < control) {
       BDD oldLow = LOW(targetDD);
@@ -1159,12 +1171,16 @@ BDD mtbdd_operation_param_rec(BDD operand,
    BDD res;
 
    if (LEVEL(targetDD) == control && controlNum == 0) {
-      res = op(control, LOW(targetDD), HIGH(targetDD), param);
+      PUSHREF(LOW(targetDD));
+      PUSHREF(HIGH(targetDD));
+      res = op(control, READREF(2), READREF(1), param);
+      POPREF(2);
    }
    else if (LEVEL(targetDD) == control) {
+      PUSHREF(LOW(targetDD));
       PUSHREF(mtbdd_operation_param_rec(HIGH(targetDD), controls + 1, controlNum - 1, op, param));
-      res = bdd_makenode(control, LOW(targetDD), READREF(1));
-      POPREF(1);
+      res = bdd_makenode(control, READREF(2), READREF(1));
+      POPREF(2);
    }
    else if (LEVEL(targetDD) < control) {
       BDD oldLow = LOW(targetDD);
@@ -1236,19 +1252,26 @@ BDD mtbdd_operation_guarded(BDD operand, size_t* controls, size_t controlNum, BD
    BDD targetDD = operand;
    if (LEVEL(targetDD) > control || ISTERMINAL(targetDD) || ISCONST(targetDD)) {
       checkSameChildren = 0;
-      targetDD = bdd_makenode(control, operand, operand);
+      PUSHREF(operand);
+      targetDD = bdd_makenode(control, READREF(1), READREF(1));
+      POPREF(1);
       checkSameChildren = 1;
    }
    
    if (LEVEL(targetDD) == control && controlNum == 0) {
-      res = op(control, targetDD);
+      PUSHREF(targetDD);
+      res = op(control, READREF(1));
+      POPREF(1);
       if (HIGH(res) == LOW(res)) {
          res = LOW(res);
       }
    }
    else if (LEVEL(targetDD) == control) {
+      PUSHREF(LOW(targetDD));
       BDD high = bdd_addref(mtbdd_operation_guarded(HIGH(targetDD), controls + 1, controlNum - 1, op));
-      res = bdd_makenode(control, LOW(targetDD), high);
+      PUSHREF(high);
+      res = bdd_makenode(control, READREF(2), READREF(1));
+      POPREF(2);
       bdd_delref(high);
    }
    else if (LEVEL(targetDD) < control) {

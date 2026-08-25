@@ -30,5 +30,7 @@ void mtbdd_register_hash_function(mtbdd_terminal_type type, mtbdd_terminal_hash_
 void mtbdd_register_compare_function(mtbdd_terminal_type type, mtbdd_terminal_compare_function_t comparefun);
 void mtbdd_register_free_function(mtbdd_terminal_type type, mtbdd_terminal_free_function_t freefun);
 void mtbdd_register_to_str_function(mtbdd_terminal_type type, mtbdd_terminal_to_str_function_t toStrfun);
+/** Free the terminal-type function table (call from bdd_done). */
+void mtbdd_terminal_types_done(void);
 
 #endif
