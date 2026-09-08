@@ -26,6 +26,14 @@ PASS: apply preserves internal level
 PASS: apply recurses on children
 PASS: leaf_count on apply result
 
+== param cache full size_t ==
+PASS: apply_param hi=0 yields 3+5+0
+PASS: apply_param cache misses when only high 32 bits differ
+PASS: unary_param hi=0 yields 5+0
+PASS: unary_param cache misses when only high 32 bits differ
+PASS: operation_param hi=0 leaves LOW=1
+PASS: operation_param cache misses when only high 32 bits differ
+
 == apply_guarded ==
 PASS: apply_guarded short-circuits to left leaves
 
@@ -72,5 +80,5 @@ PASS: terminal before done
 PASS: re-init after done works
 
 ----------------------------------------
-passed=49 failed=0 xfailed=0
+passed=55 failed=0 xfailed=0
 All tests passed.

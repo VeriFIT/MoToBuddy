@@ -503,9 +503,11 @@ BDD mtbdd_apply_param_rec(BDD l, BDD r, void*(*op)(void*, void*, size_t), size_t
     BddCacheData *entry;
     BDD res;
 
-    entry = BddCache_lookup(&mtbdd_cache_apply, TRIPLE(PAIR(l,r),(int)param,(int)(size_t)op));
+    entry = BddCache_lookup(&mtbdd_cache_apply,
+       TRIPLE(PAIR(l,r), PAIR(CACHE_SIZE_T_LO(param), CACHE_SIZE_T_HI(param)), (int)(size_t)op));
     if( BddCache_is_valid(&mtbdd_cache_apply, entry)
-       && entry->a == l && entry->b == r && entry->c == (int)(size_t)op && entry->d == (int)param){
+       && entry->a == l && entry->b == r && entry->c == (int)(size_t)op
+       && entry->d == CACHE_SIZE_T_LO(param) && entry->r2 == CACHE_SIZE_T_HI(param)){
         return entry->r.res;
     }
     if(ISMTBDDLEAF(l) && ISMTBDDLEAF(r)){
@@ -562,7 +564,7 @@ BDD mtbdd_apply_param_rec(BDD l, BDD r, void*(*op)(void*, void*, size_t), size_t
       POPREF(2);
    }
    // add reference to cache
-   BddCache_store4(entry, &mtbdd_cache_apply, l, r, (int)(size_t)op, (int)param, res);
+   BddCache_store4_sizet(entry, &mtbdd_cache_apply, l, r, (int)(size_t)op, param, res);
    return res;
 }
 
@@ -662,9 +664,11 @@ BDD mtbdd_apply_guarded_param_rec(BDD l, BDD r, BDD(*op)(BDD, BDD, size_t), size
       return res;
    }
 
-   entry = BddCache_lookup(&mtbdd_cache_apply, TRIPLE(PAIR(l,r),(int)(size_t)op,(int)param));
+   entry = BddCache_lookup(&mtbdd_cache_apply,
+      TRIPLE(PAIR(l,r), (int)(size_t)op, PAIR(CACHE_SIZE_T_LO(param), CACHE_SIZE_T_HI(param))));
    if( BddCache_is_valid(&mtbdd_cache_apply, entry)
-      && entry->a == l && entry->b == r && entry->c == (int)(size_t)op && entry->d == (int)param){
+      && entry->a == l && entry->b == r && entry->c == (int)(size_t)op
+      && entry->d == CACHE_SIZE_T_LO(param) && entry->r2 == CACHE_SIZE_T_HI(param)){
       return entry->r.res;
    }
 
@@ -691,7 +695,7 @@ BDD mtbdd_apply_guarded_param_rec(BDD l, BDD r, BDD(*op)(BDD, BDD, size_t), size
       POPREF(2);
    }
    // add reference to cache
-   BddCache_store4(entry, &mtbdd_cache_apply, l, r, (int)(size_t)op, (int)param, res);
+   BddCache_store4_sizet(entry, &mtbdd_cache_apply, l, r, (int)(size_t)op, param, res);
    return res;
 }
 
@@ -763,9 +767,11 @@ BDD mtbdd_apply_unary_param_rec(BDD l, void*(*op)(void*, size_t), size_t param) 
     BddCacheData *entry;
     BDD res;
 
-    entry = BddCache_lookup(&mtbdd_cache_apply, TRIPLE(l, (int)param, (int)(size_t)op));
+    entry = BddCache_lookup(&mtbdd_cache_apply,
+       TRIPLE(l, PAIR(CACHE_SIZE_T_LO(param), CACHE_SIZE_T_HI(param)), (int)(size_t)op));
     if ( BddCache_is_valid(&mtbdd_cache_apply, entry) && 
-         entry->a == l && entry->b == (int)param && entry->c == (int)(size_t)op) {
+         entry->a == l && entry->b == CACHE_SIZE_T_LO(param) &&
+         entry->c == (int)(size_t)op && entry->r2 == CACHE_SIZE_T_HI(param)) {
         return entry->r.res;
     }
 
@@ -793,7 +799,7 @@ BDD mtbdd_apply_unary_param_rec(BDD l, void*(*op)(void*, size_t), size_t param) 
         POPREF(2);
     }
 
-    BddCache_store(entry, &mtbdd_cache_apply, l, (int)param, (int)(size_t)op, res);
+    BddCache_store_sizet_b(entry, &mtbdd_cache_apply, l, param, (int)(size_t)op, res);
     return res;
 }
 
@@ -849,20 +855,16 @@ void mtbdd_delete_terminal(BddNode *terminal){
  *       due to calls of `op` to every node and not checking cache first.
  * 
  * @warning The user MUST set the apply validity flag inside `op` using FLAG_VALID_APPLY / FLAG_INVALID_APPLY.
- * @warning The `arg` parameter is NOT included in cache key — different calls
- *          with the same MTBDD and op but different arg will reuse cached results.
  * @warning When `op` is called on a terminal node, the returned result is always
  *          used and returned - even if the result is flagged as invalid. * 
  * @param l The MTBDD root.
  * @param op Unary operation function with recursion control.
- * @param arg User-defined optional argument passed to `op`.
+ * @param arg User-defined optional argument passed to `op` (full size_t in cache key).
  * 
  * @return Resulting MTBDD.
  * 
  * @see mtbdd_apply_unary_guarded_rec
  * @see mtbdd_apply_unary
- * 
- * @todo arg cache
  */
 BDD mtbdd_apply_unary_guarded(BDD l, BDD(*op)(BDD, void*), size_t arg) {
    CHECKa(l, bddfalse);
@@ -892,11 +894,13 @@ BDD mtbdd_apply_unary_guarded_rec(BDD l, BDD(*op)(BDD, void*), size_t arg) {
 
    BddCacheData *entry;
 
-   entry = BddCache_lookup(&mtbdd_cache_apply, TRIPLE(l, (int)(size_t)op, (int)arg));
+   entry = BddCache_lookup(&mtbdd_cache_apply,
+      TRIPLE(l, (int)(size_t)op, PAIR(CACHE_SIZE_T_LO(arg), CACHE_SIZE_T_HI(arg))));
 
 
    if ( BddCache_is_valid(&mtbdd_cache_apply, entry) && 
-      entry->a == l && entry->b == (int)arg && entry->c == (int)(size_t)op) {
+      entry->a == l && entry->b == CACHE_SIZE_T_LO(arg) &&
+      entry->c == (int)(size_t)op && entry->r2 == CACHE_SIZE_T_HI(arg)) {
 
       return entry->r.res;
    }
@@ -906,7 +910,7 @@ BDD mtbdd_apply_unary_guarded_rec(BDD l, BDD(*op)(BDD, void*), size_t arg) {
 
    // terminal case signalised by user
    if (APPLY_RESULT_VALID) {
-      BddCache_store(entry, &mtbdd_cache_apply, l, (int)arg, (int)(size_t)op, res);
+      BddCache_store_sizet_b(entry, &mtbdd_cache_apply, l, arg, (int)(size_t)op, res);
       return res;
    }
 
@@ -921,7 +925,7 @@ BDD mtbdd_apply_unary_guarded_rec(BDD l, BDD(*op)(BDD, void*), size_t arg) {
       POPREF(2);
    }
 
-   BddCache_store(entry, &mtbdd_cache_apply, l, arg, (int)(size_t)op, res);
+   BddCache_store_sizet_b(entry, &mtbdd_cache_apply, l, arg, (int)(size_t)op, res);
    return res;
 }
 
@@ -1150,12 +1154,16 @@ BDD mtbdd_operation_param_rec(BDD operand,
    size_t control = controls[0];
    int controls_key = mtbdd_controls_cachekey(controls, controlNum);
    
-   BddCacheData *entry = BddCache_lookup(&mtbdd_cache_operation, TRIPLE(PAIR(operand, controls_key),(int)param, (int)(size_t)op));
+   BddCacheData *entry = BddCache_lookup(&mtbdd_cache_operation,
+      TRIPLE(PAIR(operand, controls_key),
+             PAIR(CACHE_SIZE_T_LO(param), CACHE_SIZE_T_HI(param)),
+             (int)(size_t)op));
    if (BddCache_is_valid(&mtbdd_cache_operation, entry) &&
       entry->a == operand &&
       entry->b == controls_key &&
       entry->c == (int)(size_t)op &&
-      entry->d == (int)param) {
+      entry->d == CACHE_SIZE_T_LO(param) &&
+      entry->r2 == CACHE_SIZE_T_HI(param)) {
       return entry->r.res;
    }
 
@@ -1199,7 +1207,7 @@ BDD mtbdd_operation_param_rec(BDD operand,
    } else {
       res = targetDD;
    }
-   BddCache_store4(entry, &mtbdd_cache_operation, operand, controls_key, (int)(size_t)op, (int)param, res);
+   BddCache_store4_sizet(entry, &mtbdd_cache_operation, operand, controls_key, (int)(size_t)op, param, res);
    return res;
 }
 

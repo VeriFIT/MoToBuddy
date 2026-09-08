@@ -15,8 +15,8 @@
 #include <string>
 #include <vector>
 
-#include "../src/bdd.h"
-#include "../src/mtbddop.h"
+#include "bdd.h"
+#include "mtbddop.h"
 
 /* ------------------------------------------------------------------------=
  * Minimal test harness
@@ -98,6 +98,30 @@ static void *op_add_param(void *l, void *r, size_t p) {
     int lv = l ? *(int *)l : 0;
     int rv = r ? *(int *)r : 0;
     return box_int(lv + rv + (int)p);
+}
+
+/* Uses high 32 bits of param so entries that share low 32 bits differ. */
+static void *op_add_param_hi(void *l, void *r, size_t p) {
+    int lv = l ? *(int *)l : 0;
+    int rv = r ? *(int *)r : 0;
+    int hi = (int)((p >> 16) >> 16);
+    return box_int(lv + rv + hi);
+}
+
+static void *op_add_unary_param_hi(void *v, size_t p) {
+    int x = v ? *(int *)v : 0;
+    int hi = (int)((p >> 16) >> 16);
+    return box_int(x + hi);
+}
+
+/* operation_param: encode hi half into LOW leaf only (HIGH unchanged). */
+static BDD op_tag_lo_with_param_hi(size_t ctrl, BDD lo, BDD hi, size_t param) {
+    int add = (int)((param >> 16) >> 16);
+    unsigned tid = mtbdd_get_terminal_type(lo);
+    int *lp = (int *)malloc(sizeof(int));
+    *lp = (ISTERMINAL(lo) ? *(int *)mtbdd_getTerminalValue(lo) : 0) + add;
+    BDD nlo = mtbdd_maketerminal(lp, tid);
+    return bdd_makenode((int)ctrl, nlo, hi);
 }
 
 static int leaf_int(BDD t) {
@@ -276,6 +300,42 @@ static void test_apply_binary_unary_param() {
           "apply recurses on children");
 
     EXPECT(mtbdd_leaf_count(both) == 2, "leaf_count on apply result");
+
+    teardown();
+}
+
+/* Params that share low 32 bits must not false-hit the operation cache.
+ * (MEDUSA packs IEEE-754 doubles into size_t; 0.0 and 1.0 both have lo==0.) */
+static void test_param_cache_full_sizet() {
+    printf("\n== param cache full size_t ==\n");
+    Fixture f = setup_custom(2);
+
+    const size_t p_lo0_hi0 = (size_t)0;
+    const size_t p_lo0_hi1 = ((size_t)1) << 32; /* same low 32 bits as 0 */
+
+    BDD t3 = make_int_leaf(f, 3);
+    BDD t5 = make_int_leaf(f, 5);
+
+    BDD a0 = mtbdd_apply_param(t3, t5, op_add_param_hi, p_lo0_hi0);
+    BDD a1 = mtbdd_apply_param(t3, t5, op_add_param_hi, p_lo0_hi1);
+    EXPECT(ISTERMINAL(a0) && leaf_int(a0) == 8, "apply_param hi=0 yields 3+5+0");
+    EXPECT(ISTERMINAL(a1) && leaf_int(a1) == 9,
+          "apply_param cache misses when only high 32 bits differ");
+
+    BDD u0 = mtbdd_apply_unary_param(t5, op_add_unary_param_hi, p_lo0_hi0);
+    BDD u1 = mtbdd_apply_unary_param(t5, op_add_unary_param_hi, p_lo0_hi1);
+    EXPECT(ISTERMINAL(u0) && leaf_int(u0) == 5, "unary_param hi=0 yields 5+0");
+    EXPECT(ISTERMINAL(u1) && leaf_int(u1) == 6,
+          "unary_param cache misses when only high 32 bits differ");
+
+    BDD node = bdd_makenode(0, make_int_leaf(f, 1), make_int_leaf(f, 7));
+    size_t controls[] = {0};
+    BDD o0 = mtbdd_operation_param(node, controls, 0, op_tag_lo_with_param_hi, p_lo0_hi0);
+    BDD o1 = mtbdd_operation_param(node, controls, 0, op_tag_lo_with_param_hi, p_lo0_hi1);
+    EXPECT(leaf_int(LOW(o0)) == 1 && leaf_int(HIGH(o0)) == 7,
+          "operation_param hi=0 leaves LOW=1");
+    EXPECT(leaf_int(LOW(o1)) == 2 && leaf_int(HIGH(o1)) == 7,
+          "operation_param cache misses when only high 32 bits differ");
 
     teardown();
 }
@@ -544,6 +604,7 @@ int main() {
     test_terminal_types_and_intern();
     test_long_double_domains();
     test_apply_binary_unary_param();
+    test_param_cache_full_sizet();
     test_apply_guarded();
     test_ite();
     test_operation();

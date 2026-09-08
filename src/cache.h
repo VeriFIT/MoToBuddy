@@ -93,6 +93,31 @@ extern void BddCache_reset(BddCache *);
     ((entry)->r.res = res1), \
     ((entry)->r2 = res2), \
     ((entry)->generation = (cache)->current_generation))
+
+/* Split size_t into 32-bit halves for cache identity (LP64: both matter).
+ * Hi uses >>16>>16 so a 32-bit value never shifts by its full width. */
+#define CACHE_SIZE_T_LO(p) ((int)(unsigned int)(p))
+#define CACHE_SIZE_T_HI(p) ((int)(unsigned int)((((unsigned long long)(p)) >> 16) >> 16))
+
+/* Store a,b,c plus full size_t param as (d=lo, r2=hi). */
+#define BddCache_store4_sizet(entry, cache, as, bs, cs, param, ress) \
+   (((entry)->a = as), \
+    ((entry)->b = bs), \
+    ((entry)->c = cs), \
+    ((entry)->d = CACHE_SIZE_T_LO(param)), \
+    ((entry)->r2 = CACHE_SIZE_T_HI(param)), \
+    ((entry)->r.res = ress), \
+    ((entry)->generation = (cache)->current_generation))
+
+/* Unary-style key: param lo in b, hi in r2 (d unused / -1). */
+#define BddCache_store_sizet_b(entry, cache, as, param, cs, ress) \
+   (((entry)->a = as), \
+    ((entry)->b = CACHE_SIZE_T_LO(param)), \
+    ((entry)->c = cs), \
+    ((entry)->d = -1), \
+    ((entry)->r2 = CACHE_SIZE_T_HI(param)), \
+    ((entry)->r.res = ress), \
+    ((entry)->generation = (cache)->current_generation))
 #endif /* _CACHE_H */
 
 
