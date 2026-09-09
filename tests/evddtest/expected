@@ -1,0 +1,134 @@
+MoToBuddy EVDD value test suite
+
+== type registry ==
+PASS: registry starts empty
+PASS: new types are 0, 1, …
+PASS: type_number is live count
+PASS: type_size is allocated capacity
+PASS: functions list allocated
+PASS: four types registered
+PASS: capacity grew for fourth type
+== register callbacks ==
+PASS: hash registered
+PASS: compare registered
+PASS: free registered
+PASS: to_str registered
+PASS: mul registered
+PASS: div registered
+PASS: add registered
+PASS: sub registered
+PASS: is_zero registered
+PASS: is_one registered
+PASS: abs_cmp registered
+PASS: abs_sq registered
+PASS: sqrt registered
+PASS: register rejects type == type_number
+== types_done / reinit ==
+PASS: types_done frees the list
+PASS: types_done resets counters
+PASS: new_type works after types_done
+== intern uniquing ==
+PASS: interned payload is not reserved 0/1
+PASS: equal values intern to the same id
+PASS: distinct values get distinct ids
+PASS: get returns stored int
+PASS: get_type preserves type
+PASS: get_type on second value
+PASS: NULL intern maps to ZERO
+PASS: is_zero payload collapses to ZERO
+PASS: is_one payload collapses to ONE
+PASS: get(ZERO) is NULL
+PASS: get(ONE) is NULL
+== intern types do not alias ==
+PASS: same payload, different type_ids, distinct ValueIDs
+PASS: each id keeps its type
+== intern hash collision ==
+PASS: equal hashes still intern separately when compare differs
+== intern dedup / freefun ==
+PASS: first intern does not free the live payload
+PASS: dedup returns the live id
+PASS: dedup calls freefun on the unused payload
+PASS: value_done calls freefun on remaining rows
+== value_done resets intern ==
+PASS: intern increments evddValueUsed
+PASS: value_done resets evddValueUsed
+PASS: intern works again after value_done
+== is_zero / is_one ==
+PASS: ZERO is zero
+PASS: ZERO is not one
+PASS: ONE is one
+PASS: ONE is not zero
+PASS: typed 5 is neither zero nor one
+== algebra on ids ==
+PASS: algebra operands interned
+PASS: mul 2*3 interned as 6
+PASS: mul by ONE is identity
+PASS: ONE*x is x
+PASS: mul by ZERO absorbs
+PASS: ZERO*x absorbs
+PASS: ZERO*ONE is ZERO
+PASS: add 2+3
+PASS: add ZERO is identity
+PASS: sub 6-2
+PASS: sub x-x collapses to ZERO
+PASS: div 6/2
+PASS: div by ONE is identity
+PASS: ZERO / x is ZERO
+PASS: div by ZERO is a hard error
+== mixed-type ops error ==
+PASS: mul mixed types is a hard error
+PASS: mixed mul does not intern a product
+PASS: add mixed types is a hard error
+PASS: normalize mixed types is a hard error
+== normalize first-nonzero ==
+PASS: first-nonzero accepted with mul/div/is_zero
+PASS: built-in normalizefun installed
+PASS: nonzero low becomes ONE
+PASS: high divided by low
+PASS: incoming is the low factor
+PASS: zero low: high becomes ONE
+PASS: incoming is the high factor
+PASS: negative low still factors
+PASS: high / low keeps sign
+PASS: incoming keeps the low value
+PASS: both zero: all ZERO
+== normalize max-magnitude ==
+PASS: larger |w| edge becomes ONE
+PASS: other edge divided by max
+PASS: incoming is the max-magnitude value
+PASS: divide by the actual max-mag edge (keep sign)
+PASS: other / -5
+PASS: incoming is -5
+PASS: tie: prefer low
+PASS: tie: high / low
+PASS: tie: incoming is low
+== normalize L2 ==
+PASS: L2 (3,4) -> (0.6, 0.8)
+PASS: L2 incoming is the norm
+PASS: L2 need not produce a unit edge
+== normalize custom + freeze ==
+PASS: custom normalizefun registered
+PASS: CUSTOM accepted when normalizefun is set
+PASS: CUSTOM freezes
+PASS: custom: high becomes ONE
+PASS: custom: low / high
+PASS: custom: incoming is high
+PASS: second set_normalization is a hard error
+PASS: frozen strategy is unchanged
+== set_normalization missing callbacks ==
+PASS: first-nonzero without mul/div/is_zero errors
+PASS: failed set does not freeze
+PASS: L2 without sqrt/abs_sq/add errors
+PASS: failed L2 does not freeze
+PASS: CUSTOM without normalizefun errors
+== two types, two norms ==
+PASS: different types may freeze different strategies
+PASS: int-typed diagram uses first-nonzero
+PASS: double-typed diagram uses L2
+== independent of bdd_init ==
+PASS: bdd is not running
+PASS: intern works without bdd_init
+
+----------------------------------------
+passed=110 failed=0
+All tests passed.

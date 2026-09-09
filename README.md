@@ -211,6 +211,9 @@ doc/
   mosf.mosf             -- MOSF format reference and examples
 examples/
   quantum_gates/        -- CX, CCX, MOSF quantum gate demo
+tests/
+  mtbddtest/            -- MTBDD unit tests
+  evddtest/             -- EVDD value-layer unit tests
 ```
 
 ---
