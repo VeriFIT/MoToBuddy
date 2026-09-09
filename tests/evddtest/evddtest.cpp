@@ -18,6 +18,8 @@
 #include <cstring>
 
 #include "bdd.h"
+#include "evdd.h"
+#include "evdd_kernel.h"
 #include "evdd_value.h"
 
 /* ------------------------------------------------------------------------=
@@ -628,6 +630,49 @@ static void test_independent_of_bdd_init(void) {
     teardown_values();
 }
 
+static void test_node_table_init(void) {
+    printf("\n== node table init ==\n");
+
+    EXPECT(sizeof(EvddNode) == 28, "EvddNode is 28 bytes");
+    EXPECT(!evdd_isrunning() && evddnodes == NULL, "evdd starts idle");
+
+    reset_errors();
+    EXPECT(evdd_init(1000) == 0, "evdd_init succeeds");
+    EXPECT(evdd_isrunning(), "evdd_isrunning after init");
+    EXPECT(evddnodes != NULL && evddnodesize >= 1000, "table allocated at prime size");
+    EXPECT(evddfreenum == evddnodesize - 2 && evddfreepos == 2,
+           "freelist starts at 2 with size-2 free nodes");
+
+    EXPECT(evddnodes[EVDD_FALSE_NODE].refcou == EVDD_MAXREF &&
+               evddnodes[EVDD_TRUE_NODE].refcou == EVDD_MAXREF,
+           "sinks are pinned MAXREF");
+    EXPECT(EVDDLEVEL(EVDD_FALSE_NODE) == EVDD_MAXLEVEL &&
+               EVDDLEVEL(EVDD_TRUE_NODE) == EVDD_MAXLEVEL,
+           "sinks sit at MAXLEVEL");
+    EXPECT(EVDDLOW(EVDD_FALSE_NODE) == EVDD_FALSE_NODE &&
+               EVDDHIGH(EVDD_TRUE_NODE) == EVDD_TRUE_NODE,
+           "sinks point to themselves");
+    EXPECT(EVDDISFREE(2), "first free slot has low==-1");
+
+    EVDD z = evdd_false();
+    EVDD o = evdd_true();
+    EXPECT(z.node == EVDD_FALSE_NODE && z.w == EVDD_VALUE_ONE,
+           "evdd_false is (0, ONE)");
+    EXPECT(o.node == EVDD_TRUE_NODE && o.w == EVDD_VALUE_ONE,
+           "evdd_true is (1, ONE)");
+
+    reset_errors();
+    EXPECT(evdd_init(100) != 0 && g_error_count >= 1,
+           "second evdd_init without done errors");
+
+    evdd_done();
+    EXPECT(!evdd_isrunning() && evddnodes == NULL, "evdd_done frees the table");
+
+    EXPECT(evdd_init(64) == 0 && evdd_isrunning(), "re-init after done works");
+    EXPECT(!bdd_isrunning(), "evdd_init does not start bdd");
+    evdd_done();
+}
+
 /* ------------------------------------------------------------------------=
  * main
  * ---------------------------------------------------------------------= */
@@ -654,6 +699,7 @@ int main(void) {
     test_set_normalization_missing_callbacks();
     test_two_types_two_norms();
     test_independent_of_bdd_init();
+    test_node_table_init();
 
     printf("\n----------------------------------------\n");
     printf("passed=%d failed=%d\n", g_passed, g_failed);
