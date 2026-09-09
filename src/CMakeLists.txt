@@ -29,6 +29,7 @@ set(HEADERS
   mtbddop.h
   mosf_parser.h
   mtbdd_cache_registry.h
+  evdd_value.h
 )
 
 set(SOURCES
@@ -48,6 +49,7 @@ set(SOURCES
  mtbdd.c
  mtbddop.cxx
  mtbdd_cache_registry.c
+ evdd_value.c
 )
 
 # ============================================================================ #

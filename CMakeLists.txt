@@ -65,3 +65,8 @@ add_subdirectory(src)
 if(BUDDY_EXAMPLES)
   add_subdirectory(examples)
 endif()
+
+# ============================================================================ #
+# Tests
+# ============================================================================ #
+add_subdirectory(tests)
