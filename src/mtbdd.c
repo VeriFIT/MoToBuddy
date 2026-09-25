@@ -244,8 +244,24 @@ int mtbdd_insertvalue(void *value){
 int mtbdd_findterminal(void *value, unsigned hash, mtbdd_terminal_type type){
    int res = bddnodes[hash].hash;
    int count = 0;
+   mtbdd_terminal_compare_function_t cmp = NULL;
+
+   if (domaintype == CUSTOM) {
+      cmp = CUSTOMCOMPARE(type);
+      if (cmp == NULL) {
+         printf("Error: No compare function defined for CUSTOM type %d\n", type);
+         bdd_error(BDD_OP);
+         return bddfalse;
+      }
+   }
+
    while(res != 0)
    {
+      /* Hash buckets are shared with internal nodes; only terminals live at MAXLEVEL. */
+      if (LEVEL(res) != MAXLEVEL) {
+         res = bddnodes[res].next;
+         continue;
+      }
       unsigned index = bddnodes[res].index;
       if (index >= (unsigned)mtbddmaxTerminalSize) {
          res = bddnodes[res].next;
@@ -265,12 +281,6 @@ int mtbdd_findterminal(void *value, unsigned hash, mtbdd_terminal_type type){
             break;
 
          case CUSTOM:
-            mtbdd_terminal_compare_function_t cmp = CUSTOMCOMPARE(type);
-            if (cmp == NULL) {
-               printf("Error: No compare function defined for CUSTOM type %d\n", type);
-               bdd_error(BDD_OP);
-               return bddfalse;
-            }
             if (type == bddnodes[res].type &&
                cmp(value, mtbddterminalVals.customPointers[index])) {
                return res;
