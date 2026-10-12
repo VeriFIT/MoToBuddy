@@ -735,6 +735,119 @@ static void test_makenode_raw(void) {
     teardown_values();
 }
 
+static void test_evdd_normalize(void) {
+    printf("\n== evdd_normalize ==\n");
+
+    EXPECT(evdd_init(128) == 0, "normalize: evdd_init");
+
+    EVDD f = evdd_false();
+    EVDD t = evdd_true();
+    EVDD cf = evdd_normalize(f);
+    EVDD ct = evdd_normalize(t);
+    EXPECT(cf.node == EVDD_FALSE_NODE && cf.w == EVDD_VALUE_ONE,
+           "normalize false is false");
+    EXPECT(ct.node == EVDD_TRUE_NODE && ct.w == EVDD_VALUE_ONE,
+           "normalize true is true");
+
+    evdd_value_type ti = register_int_type();
+    evdd_set_normalization(ti, EVDD_NORMALIZE_FIRST_NONZERO);
+
+    EVDD low = f;
+    EVDD high = t;
+    low.w = intern_int(ti, 2);
+    high.w = intern_int(ti, 4);
+
+    EVDD raw = evdd_makenode_raw(1, low, high);
+    EVDD eager = evdd_makenode(1, low, high);
+    EVDD norm = evdd_normalize(raw);
+    EXPECT(norm.node == eager.node && norm.w == eager.w,
+           "normalize(raw) matches eager makenode (single node)");
+
+    /* Multi-level: raw then normalize == makenode throughout. */
+    EVDD mid_raw = evdd_makenode_raw(0, f, t); /* identity weights */
+    EVDD up_low = mid_raw;
+    EVDD up_high = t;
+    up_low.w = intern_int(ti, 6);
+    up_high.w = intern_int(ti, 3);
+    EVDD top_raw = evdd_makenode_raw(2, up_low, up_high);
+
+    EVDD mid_e = evdd_makenode(0, f, t);
+    EVDD up_low_e = mid_e;
+    EVDD up_high_e = t;
+    up_low_e.w = intern_int(ti, 6);
+    up_high_e.w = intern_int(ti, 3);
+    EVDD top_e = evdd_makenode(2, up_low_e, up_high_e);
+
+    EVDD top_n = evdd_normalize(top_raw);
+    EXPECT(top_n.node == top_e.node && top_n.w == top_e.w,
+           "normalize(raw DAG) matches eager makenode throughout");
+
+    /* Root incoming weight scales the result factor. */
+    EVDD scaled = top_raw;
+    scaled.w = intern_int(ti, 5);
+    EVDD scaled_n = evdd_normalize(scaled);
+    EXPECT(scaled_n.node == top_n.node &&
+               scaled_n.w == evdd_value_mul(intern_int(ti, 5), top_n.w),
+           "normalize multiplies root incoming weight");
+
+    /*
+     * Diamond: left and right both point at the same mid. After normalize,
+     * the shared child must still be one node (memo + unique table).
+     *
+     *        top
+     *       /   \
+     *    left   right
+     *       \   /
+     *        mid
+     */
+    EVDD mid_l = f;
+    EVDD mid_h = t;
+    mid_l.w = intern_int(ti, 2);
+    mid_h.w = intern_int(ti, 4);
+    EVDD mid = evdd_makenode_raw(0, mid_l, mid_h);
+
+    EVDD left_l = mid;
+    EVDD left_h = t;
+    left_l.w = EVDD_VALUE_ONE;
+    left_h.w = EVDD_VALUE_ONE;
+    EVDD left = evdd_makenode_raw(1, left_l, left_h);
+
+    EVDD right_l = mid;
+    EVDD right_h = f;
+    right_l.w = EVDD_VALUE_ONE;
+    right_h.w = EVDD_VALUE_ONE;
+    EVDD right = evdd_makenode_raw(1, right_l, right_h);
+
+    EXPECT(EVDDLOW(left.node) == mid.node && EVDDLOW(right.node) == mid.node,
+           "diamond raw: left and right share mid");
+
+    EVDD dtop_l = left;
+    EVDD dtop_r = right;
+    dtop_l.w = EVDD_VALUE_ONE;
+    dtop_r.w = EVDD_VALUE_ONE;
+    EVDD diamond_raw = evdd_makenode_raw(2, dtop_l, dtop_r);
+
+    EVDD mid_e2 = evdd_makenode(0, mid_l, mid_h);
+    EVDD left_e2 = evdd_makenode(1, mid_e2, t);
+    EVDD right_e2 = evdd_makenode(1, mid_e2, f);
+    EVDD diamond_e = evdd_makenode(2, left_e2, right_e2);
+
+    EVDD diamond_n = evdd_normalize(diamond_raw);
+    EXPECT(diamond_n.node == diamond_e.node && diamond_n.w == diamond_e.w,
+           "normalize(diamond) matches eager makenode");
+
+    int left_n = EVDDLOW(diamond_n.node);
+    int right_n = EVDDHIGH(diamond_n.node);
+    EXPECT(left_n != right_n, "diamond: left and right stay distinct nodes");
+    EXPECT(EVDDLOW(left_n) == EVDDLOW(right_n),
+           "diamond: shared mid remains one node after normalize");
+    EXPECT(EVDDLOW(left_n) == mid_e2.node,
+           "diamond: shared child is the eager-normalized mid");
+
+    evdd_done();
+    teardown_values();
+}
+
 /* ------------------------------------------------------------------------=
  * main
  * ---------------------------------------------------------------------= */
@@ -763,6 +876,7 @@ int main(void) {
     test_independent_of_bdd_init();
     test_node_table_init();
     test_makenode_raw();
+    test_evdd_normalize();
 
     printf("\n----------------------------------------\n");
     printf("passed=%d failed=%d\n", g_passed, g_failed);
