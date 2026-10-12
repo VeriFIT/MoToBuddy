@@ -173,6 +173,19 @@ PASS: evdd_done frees the table
 PASS: re-init after done works
 PASS: evdd_init does not start bdd
 
+== makenode_raw ==
+PASS: makenode_raw: evdd_init
+PASS: raw returns (ONE, node>=2)
+PASS: raw stores level and child node ids
+PASS: raw stores child edge weights on the node
+PASS: raw unique hit shares node
+PASS: raw does not skip-reduce equal children
+PASS: raw keeps unnormalized weights and uniquifies them
+PASS: different outgoing weight => different node
+PASS: makenode weight-normalizes then calls raw
+PASS: makenode high weight is w_high/incoming
+PASS: makenode and raw agree on normalized key
+
 ----------------------------------------
-passed=126 failed=0
+passed=137 failed=0
 All tests passed.
