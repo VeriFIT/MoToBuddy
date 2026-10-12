@@ -673,6 +673,68 @@ static void test_node_table_init(void) {
     evdd_done();
 }
 
+static void test_makenode_raw(void) {
+    printf("\n== makenode_raw ==\n");
+
+    EXPECT(evdd_init(128) == 0, "makenode_raw: evdd_init");
+
+    EVDD f = evdd_false();
+    EVDD t = evdd_true();
+    EVDD a = evdd_makenode_raw(0, f, t);
+    EXPECT(a.w == EVDD_VALUE_ONE && a.node >= 2, "raw returns (ONE, node>=2)");
+    EXPECT(EVDDLEVEL(a.node) == 0 && EVDDLOW(a.node) == EVDD_FALSE_NODE &&
+               EVDDHIGH(a.node) == EVDD_TRUE_NODE,
+           "raw stores level and child node ids");
+    EXPECT(EVDDWLOW(a.node) == EVDD_VALUE_ONE &&
+               EVDDWHIGH(a.node) == EVDD_VALUE_ONE,
+           "raw stores child edge weights on the node");
+
+    EVDD b = evdd_makenode_raw(0, f, t);
+    EXPECT(a.node == b.node && evddproduced == 1, "raw unique hit shares node");
+
+    EVDD same = evdd_makenode_raw(3, t, t);
+    EXPECT(same.node >= 2 && same.node != EVDD_TRUE_NODE &&
+               EVDDLOW(same.node) == EVDD_TRUE_NODE &&
+               EVDDHIGH(same.node) == EVDD_TRUE_NODE,
+           "raw does not skip-reduce equal children");
+
+    evdd_value_type ti = register_int_type();
+    EVDD low = f;
+    EVDD high = t;
+    low.w = intern_int(ti, 2);
+    high.w = intern_int(ti, 3);
+    EVDD r1 = evdd_makenode_raw(2, low, high);
+    EVDD r2 = evdd_makenode_raw(2, low, high);
+    EXPECT(r1.node == r2.node && EVDDWLOW(r1.node) == low.w &&
+               EVDDWHIGH(r1.node) == high.w,
+           "raw keeps unnormalized weights and uniquifies them");
+
+    EVDD other = f;
+    other.w = intern_int(ti, 5);
+    EVDD r3 = evdd_makenode_raw(2, other, high);
+    EXPECT(r3.node != r1.node, "different outgoing weight => different node");
+
+    evdd_set_normalization(ti, EVDD_NORMALIZE_FIRST_NONZERO);
+    EVDD e = evdd_makenode(2, low, high);
+    EXPECT(e.w == low.w && EVDDWLOW(e.node) == EVDD_VALUE_ONE &&
+               get_int(EVDDWHIGH(e.node)) == 1,
+           "makenode weight-normalizes then calls raw");
+    /* 3/2 with ints: int_div of 3/2 */
+    EXPECT(get_int(EVDDWHIGH(e.node)) == get_int(evdd_value_div(high.w, low.w)),
+           "makenode high weight is w_high/incoming");
+
+    /* Eager result shares with raw built on the normalized key. */
+    EVDD nlow = low;
+    EVDD nhigh = high;
+    nlow.w = EVDD_VALUE_ONE;
+    nhigh.w = EVDDWHIGH(e.node);
+    EVDD raw_norm = evdd_makenode_raw(2, nlow, nhigh);
+    EXPECT(raw_norm.node == e.node, "makenode and raw agree on normalized key");
+
+    evdd_done();
+    teardown_values();
+}
+
 /* ------------------------------------------------------------------------=
  * main
  * ---------------------------------------------------------------------= */
@@ -700,6 +762,7 @@ int main(void) {
     test_two_types_two_norms();
     test_independent_of_bdd_init();
     test_node_table_init();
+    test_makenode_raw();
 
     printf("\n----------------------------------------\n");
     printf("passed=%d failed=%d\n", g_passed, g_failed);
