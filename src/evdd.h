@@ -64,6 +64,24 @@ EVDD evdd_makenode_raw(unsigned int level, EVDD low, EVDD high);
  */
 EVDD evdd_normalize(EVDD root);
 
+/**
+ * Increment the reference count of a node.
+*/
+EVDD evdd_addref(EVDD root);
+
+/**
+ * Decrement the reference count of a node.
+*/
+EVDD evdd_delref(EVDD root);
+
+/**
+ * Garbage-collect unreferenced EVDD nodes.
+ *
+ * Marks from external roots (refcou > 0; sinks are MAXREF), sweeps the
+ * rest onto the freelist, and rebuilds the unique-table hash.
+ */
+void evdd_gbc(void);
+
 #ifdef __cplusplus
 }
 #endif
