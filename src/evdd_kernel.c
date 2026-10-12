@@ -274,10 +274,65 @@ EVDD evdd_makenode_raw(unsigned int level, EVDD low, EVDD high)
     return out;
 }
 
+typedef struct {
+    int set;
+    EVDD e;
+} EvddNormMemo;
+
+static EVDD evdd_normalize_node(int node, EvddNormMemo *memo)
+{
+    EVDD low_e, high_e, out;
+
+    // zero or one
+    if (EVDDISCONST(node)) {
+        out.node = node;
+        out.w = EVDD_VALUE_ONE;
+        return out;
+    }
+
+    if (memo[node].set)
+        return memo[node].e;
+
+    low_e = evdd_normalize_node(EVDDLOW(node), memo);
+    high_e = evdd_normalize_node(EVDDHIGH(node), memo);
+
+    /* Fold this node's outgoing weights with factors pulled from children. */
+    low_e.w = evdd_value_mul(EVDDWLOW(node), low_e.w);
+    high_e.w = evdd_value_mul(EVDDWHIGH(node), high_e.w);
+
+    out = evdd_makenode(EVDDLEVEL(node), low_e, high_e);
+    memo[node].e = out;
+    memo[node].set = 1;
+    return out;
+}
+
 EVDD evdd_normalize(EVDD root)
 {
-    /* bottom-up: recurse children, evdd_value_normalize at each node,
-       unique on normalized key; return canonical edge.
-       Same function as eager makenode throughout. */
-    return root;
+    EvddNormMemo *memo;
+    EVDD out;
+    int n;
+
+    if (!evddrunning) {
+        bdd_error(BDD_RUNNING);
+        return evdd_false();
+    }
+
+    if (root.node < 0 || root.node >= evddnodesize ||
+        (EVDDISNONCONST(root.node) && EVDDISFREE(root.node))) {
+        bdd_error(BDD_ILLBDD);
+        return evdd_false();
+    }
+
+    /* Memo only needs slots for nodes that existed when the walk started. */
+    n = evddnodesize;
+    memo = (EvddNormMemo *)calloc((size_t)n, sizeof(EvddNormMemo));
+    if (memo == NULL) {
+        bdd_error(BDD_MEMORY);
+        return evdd_false();
+    }
+
+    out = evdd_normalize_node(root.node, memo);
+    out.w = evdd_value_mul(root.w, out.w);
+    free(memo);
+    return out;
 }
