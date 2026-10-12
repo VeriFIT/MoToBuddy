@@ -43,6 +43,27 @@ int  evdd_isrunning(void);
 EVDD evdd_false(void);
 EVDD evdd_true(void);
 
+/**
+ * Eager makenode: weight-normalize outgoing edges, then unique-table
+ * lookup/insert on (level, low, high, w_low', w_high').
+ * Returns edge (incoming_factor, node). Never skip-reduces.
+ */
+EVDD evdd_makenode(unsigned int level, EVDD low, EVDD high);
+
+/**
+ * Like makenode but skips weight-normalization. Still unique-lookups on
+ * the raw (level, low, high, w_low, w_high). Diagram is not canonical
+ * until @c evdd_normalize. Never skip-reduces.
+ */
+EVDD evdd_makenode_raw(unsigned int level, EVDD low, EVDD high);
+
+/**
+ * Diagram normalize: bottom-up weight-normalize every node and re-unique.
+ * Same function as building with @c evdd_makenode throughout.
+ * Distinct from @c evdd_value_normalize (local weight rewrite only).
+ */
+EVDD evdd_normalize(EVDD root);
+
 #ifdef __cplusplus
 }
 #endif

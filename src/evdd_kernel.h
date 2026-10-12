@@ -7,8 +7,10 @@
  * ops - they index the BDD table.
  *
  * Node layout (28 B): low, high, w_low, w_high (ValueIDs),
- * refcou/level/mark, hash, next. Unique key after normalize:
- * (level, low, high, w_low, w_high).
+ * refcou/level/mark, hash, next. Unique key:
+ * (level, low, high, w_low, w_high). Eager makenode stores the
+ * weight-normalized pair; makenode_raw stores the raw pair. No
+ * ROBDD skip-reduction.
  */
 
 #ifndef EVDD_KERNEL_H
@@ -24,7 +26,7 @@ extern "C" {
 /**
  * @brief Unique-table entry (28 B). Flat children + weights.
  *
- * Unique key after normalize: (level, low, high, w_low, w_high).
+ * Unique key: (level, low, high, w_low, w_high).
  * Public roots use EVDD; the table stays flat (no nested edge struct).
  */
 typedef struct s_EvddNode {
@@ -51,6 +53,14 @@ typedef struct s_EvddNode {
                     ((unsigned int)(a))))
 #define EVDD_TRIPLE(a, b, c)                                                   \
     ((unsigned int)(EVDD_PAIR((unsigned int)(c), EVDD_PAIR((a), (b)))))
+
+/** Unique-table bucket for key (level, low, high, w_low, w_high). */
+#define EVDD_NODEHASH(lvl, l, h, wl, wh)                                       \
+    ((((EVDD_PAIR(EVDD_TRIPLE((lvl), (l), (h)),                                \
+                  EVDD_PAIR((unsigned int)(wl), (unsigned int)(wh)))) %        \
+       (unsigned int)evddnodesize) +                                           \
+      2u) %                                                                    \
+     (unsigned int)evddnodesize)
 
 /* Field access on evddnodes[] - never alias BDD LOW/HIGH/LEVEL. */
 #define EVDDLEVEL(n)   (evddnodes[n].level)

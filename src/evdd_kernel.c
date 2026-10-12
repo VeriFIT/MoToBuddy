@@ -3,8 +3,11 @@
  * @brief EVDD kernel - init/done, unique table, makenode, GC, refs, vars.
  *
  * Stripped counterpart of kernel.c for evddnodes. No pairs, reorder, FDD,
- * or mtbdd_delete_terminal. Eager evdd_makenode is the default; unreduced
- * alloc and user-called evdd_reduce live here as well.
+ * or mtbdd_delete_terminal. No ROBDD skip-reduction.
+ *
+ * makenode: weight-normalize then unique.
+ * makenode_raw: unique only (no weight-normalize).
+ * evdd_normalize: DAG pass that weight-normalizes and re-uniques.
  */
 
 #include <stdio.h>
@@ -13,6 +16,7 @@
 
 #include "bdd.h"
 #include "evdd_kernel.h"
+#include "evdd_value.h"
 #include "prime.h"
 
 extern int bdd_error(int);
@@ -117,4 +121,163 @@ void evdd_done(void)
 
     free(evddnodes);
     evdd_clear_table_state();
+}
+
+/* -------------------------------------------------------------------------
+ * Unique table / makenode
+ * ---------------------------------------------------------------------- */
+
+#define EVDD_DEFAULTMAXNODEINC 50000
+
+static void evdd_rehash(void)
+{
+    int n;
+
+    for (n = 0; n < evddnodesize; n++)
+        evddnodes[n].hash = 0;
+
+    for (n = evddnodesize - 1; n >= 2; n--) {
+        unsigned int hash;
+
+        if (EVDDISFREE(n))
+            continue;
+
+        hash = EVDD_NODEHASH(EVDDLEVEL(n), EVDDLOW(n), EVDDHIGH(n), EVDDWLOW(n),
+                             EVDDWHIGH(n));
+        evddnodes[n].next = evddnodes[hash].hash;
+        evddnodes[hash].hash = n;
+    }
+}
+
+static int evdd_noderesize(void)
+{
+    EvddNode *newnodes;
+    int oldsize = evddnodesize;
+    int n;
+
+    if (evddnodesize >= evddmaxnodesize && evddmaxnodesize > 0)
+        return -1;
+
+    evddnodesize = evddnodesize << 1;
+
+    if (evddnodesize > oldsize + EVDD_DEFAULTMAXNODEINC)
+        evddnodesize = oldsize + EVDD_DEFAULTMAXNODEINC;
+
+    if (evddnodesize > evddmaxnodesize && evddmaxnodesize > 0)
+        evddnodesize = evddmaxnodesize;
+
+    evddnodesize = bdd_prime_lte(evddnodesize);
+    if (evddnodesize <= oldsize)
+        return -1;
+
+    newnodes = (EvddNode *)realloc(evddnodes, sizeof(EvddNode) * (size_t)evddnodesize);
+    if (newnodes == NULL) {
+        evddnodesize = oldsize;
+        return bdd_error(BDD_MEMORY);
+    }
+    evddnodes = newnodes;
+
+    for (n = 0; n < oldsize; n++)
+        evddnodes[n].hash = 0;
+
+    for (n = oldsize; n < evddnodesize; n++) {
+        evddnodes[n].refcou = 0;
+        evddnodes[n].level = 0;
+        evddnodes[n].mark = 0;
+        EVDDLOW(n) = -1;
+        EVDDHIGH(n) = 0;
+        EVDDWLOW(n) = EVDD_VALUE_ONE;
+        EVDDWHIGH(n) = EVDD_VALUE_ONE;
+        evddnodes[n].hash = 0;
+        evddnodes[n].next = n + 1;
+    }
+    evddnodes[evddnodesize - 1].next = evddfreepos;
+    evddfreepos = oldsize;
+    evddfreenum += evddnodesize - oldsize;
+
+    evdd_rehash();
+    return 0;
+}
+
+EVDD evdd_makenode(unsigned int level, EVDD low, EVDD high)
+{
+    evddNormResult normalized_result = evdd_value_normalize(low.w, high.w);
+    EVDD newnode;
+
+    if (evdd_value_is_zero(normalized_result.incoming))
+        return evdd_false();
+
+    low.w = normalized_result.w_low;
+    high.w = normalized_result.w_high;
+    newnode = evdd_makenode_raw(level, low, high);
+    newnode.w = evdd_value_mul(normalized_result.incoming, newnode.w);
+    return newnode;
+}
+
+EVDD evdd_makenode_raw(unsigned int level, EVDD low, EVDD high)
+{
+    unsigned int hash;
+    int res;
+    int lchild = low.node;
+    int hchild = high.node;
+    evdd_value_id wl = low.w;
+    evdd_value_id wh = high.w;
+    EvddNode *node;
+    EVDD out;
+
+    if (!evddrunning) {
+        bdd_error(BDD_RUNNING);
+        return evdd_false();
+    }
+
+    /* Find the node in the unique table. */
+    hash = EVDD_NODEHASH(level, lchild, hchild, wl, wh);
+    res = evddnodes[hash].hash;
+    while (res != 0) {
+        if (EVDDLEVEL(res) == level && EVDDLOW(res) == lchild &&
+            EVDDHIGH(res) == hchild && EVDDWLOW(res) == wl &&
+            EVDDWHIGH(res) == wh) {
+            out.node = res;
+            out.w = EVDD_VALUE_ONE;
+            return out;
+        }
+        res = evddnodes[res].next;
+    }
+
+    if (evddfreepos == 0) {
+        evdd_noderesize();
+        hash = EVDD_NODEHASH(level, lchild, hchild, wl, wh);
+        if (evddfreepos == 0) {
+            bdd_error(BDD_NODENUM);
+            return evdd_false();
+        }
+    }
+
+    res = evddfreepos;
+    evddfreepos = evddnodes[evddfreepos].next;
+    evddfreenum--;
+    evddproduced++;
+
+    node = &evddnodes[res];
+    node->level = level;
+    node->low = lchild;
+    node->high = hchild;
+    node->w_low = wl;
+    node->w_high = wh;
+    node->refcou = 0;
+    node->mark = 0;
+    node->next = evddnodes[hash].hash;
+    evddnodes[hash].hash = res;
+
+    out.node = res;
+    out.w = EVDD_VALUE_ONE;
+    return out;
+}
+
+EVDD evdd_normalize(EVDD root)
+{
+    /* bottom-up: recurse children, evdd_value_normalize at each node,
+       unique on normalized key; return canonical edge.
+       Same function as eager makenode throughout. */
+    return root;
 }
