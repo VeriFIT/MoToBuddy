@@ -78,6 +78,10 @@ typedef struct s_EvddNode {
 #define EVDDUNMARK(n)   (evddnodes[n].mark = 0)
 #define EVDDMARKED(n)   (evddnodes[n].mark)
 
+#define EVDDSETMARKp(p)  ((p)->mark = 1)
+#define EVDDUNMARKp(p)   ((p)->mark = 0)
+#define EVDDMARKEDp(p)   ((p)->mark)
+
 #define EVDDINCREF(n)                                                          \
     do {                                                                       \
         if (evddnodes[n].refcou < EVDD_MAXREF)                                 \
