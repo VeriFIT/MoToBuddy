@@ -199,6 +199,18 @@ PASS: diamond: left and right stay distinct nodes
 PASS: diamond: shared mid remains one node after normalize
 PASS: diamond: shared child is the eager-normalized mid
 
+== refs / gbc ==
+PASS: refs_gbc: evdd_init
+PASS: new nodes start with refcou 0
+PASS: addref bumps root refcou
+PASS: addref on sink is a no-op (stays MAXREF)
+PASS: gbc frees unreachable node
+PASS: gbc keeps addref'd root
+PASS: gbc increases freelist
+PASS: unique hit still works after gbc
+PASS: delref drops refcou to 0
+PASS: gbc frees node after last delref
+
 ----------------------------------------
-passed=148 failed=0
+passed=158 failed=0
 All tests passed.

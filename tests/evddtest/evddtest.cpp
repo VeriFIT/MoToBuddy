@@ -848,6 +848,47 @@ static void test_evdd_normalize(void) {
     teardown_values();
 }
 
+static void test_evdd_refs_gbc(void) {
+    printf("\n== refs / gbc ==\n");
+
+    EXPECT(evdd_init(64) == 0, "refs_gbc: evdd_init");
+
+    EVDD f = evdd_false();
+    EVDD t = evdd_true();
+    EVDD keep = evdd_makenode_raw(0, f, t);
+    EVDD drop = evdd_makenode_raw(1, f, t);
+    int drop_node = drop.node;
+    int free_before;
+
+    EXPECT(evddnodes[keep.node].refcou == 0 && evddnodes[drop_node].refcou == 0,
+           "new nodes start with refcou 0");
+
+    evdd_addref(keep);
+    EXPECT(evddnodes[keep.node].refcou == 1, "addref bumps root refcou");
+
+    EVDD still_false = evdd_addref(f);
+    EXPECT(still_false.node == EVDD_FALSE_NODE &&
+               evddnodes[EVDD_FALSE_NODE].refcou == EVDD_MAXREF,
+           "addref on sink is a no-op (stays MAXREF)");
+
+    free_before = evddfreenum;
+    evdd_gbc();
+    EXPECT(EVDDISFREE(drop_node), "gbc frees unreachable node");
+    EXPECT(!EVDDISFREE(keep.node) && evddnodes[keep.node].refcou == 1,
+           "gbc keeps addref'd root");
+    EXPECT(evddfreenum > free_before, "gbc increases freelist");
+
+    EVDD again = evdd_makenode_raw(0, f, t);
+    EXPECT(again.node == keep.node, "unique hit still works after gbc");
+
+    evdd_delref(keep);
+    EXPECT(evddnodes[keep.node].refcou == 0, "delref drops refcou to 0");
+    evdd_gbc();
+    EXPECT(EVDDISFREE(keep.node), "gbc frees node after last delref");
+
+    evdd_done();
+}
+
 /* ------------------------------------------------------------------------=
  * main
  * ---------------------------------------------------------------------= */
@@ -877,6 +918,7 @@ int main(void) {
     test_node_table_init();
     test_makenode_raw();
     test_evdd_normalize();
+    test_evdd_refs_gbc();
 
     printf("\n----------------------------------------\n");
     printf("passed=%d failed=%d\n", g_passed, g_failed);

@@ -245,7 +245,9 @@ EVDD evdd_makenode_raw(unsigned int level, EVDD low, EVDD high)
     }
 
     if (evddfreepos == 0) {
-        evdd_noderesize();
+        evdd_gbc();
+        if (evddfreepos == 0)
+            evdd_noderesize();
         hash = EVDD_NODEHASH(level, lchild, hchild, wl, wh);
         if (evddfreepos == 0) {
             bdd_error(BDD_NODENUM);
@@ -335,4 +337,107 @@ EVDD evdd_normalize(EVDD root)
     out.w = evdd_value_mul(root.w, out.w);
     free(memo);
     return out;
+}
+
+EVDD evdd_addref(EVDD root)
+{   
+   if (root.node < 2  ||  !evddrunning)
+      return root;
+   if (root.node >= evddnodesize)
+   {
+      bdd_error(BDD_ILLBDD);
+      return evdd_false();
+   }
+   if (EVDDLOW(root.node) == -1)
+   {
+      bdd_error(BDD_ILLBDD);
+      return evdd_false();
+   }
+
+   EVDDINCREF(root.node);
+   return root;
+}
+
+EVDD evdd_delref(EVDD root)
+{   
+   if (root.node < 2  ||  !evddrunning)
+      return root;
+   if (root.node >= evddnodesize)
+   {
+      bdd_error(BDD_ILLBDD);
+      return evdd_false();
+   }
+   if (EVDDLOW(root.node) == -1)
+   {
+      bdd_error(BDD_ILLBDD);
+      return evdd_false();
+   }
+
+   EVDDDECREF(root.node);
+   return root;
+}
+
+static void evdd_mark(int i)
+{
+    EvddNode *node;
+
+    if (i < 2)
+        return;
+
+    node = &evddnodes[i];
+    if (EVDDMARKEDp(node) || EVDDLOWp(node) == -1)
+        return;
+
+    EVDDSETMARKp(node);
+    evdd_mark(EVDDLOWp(node));
+    evdd_mark(EVDDHIGHp(node));
+}
+
+void evdd_gbc(void)
+{
+    int n;
+
+    if (!evddrunning)
+        return;
+
+    /* Mark from external roots. Sinks stay alive via MAXREF. No refstack yet. */
+    for (n = 0; n < evddnodesize; n++) {
+        if (evddnodes[n].refcou > 0)
+            evdd_mark(n);
+        evddnodes[n].hash = 0;
+    }
+
+    evddfreepos = 0;
+    evddfreenum = 0;
+
+    for (n = evddnodesize - 1; n >= 2; n--) {
+        EvddNode *node = &evddnodes[n];
+
+        // marked and not free, keep in the table
+        if (EVDDMARKEDp(node) && EVDDLOWp(node) != -1) {
+            unsigned int hash;
+
+            EVDDUNMARKp(node);
+            hash = EVDD_NODEHASH(EVDDLEVELp(node), EVDDLOWp(node),
+                                 EVDDHIGHp(node), EVDDWLOWp(node),
+                                 EVDDWHIGHp(node));
+            node->next = evddnodes[hash].hash;
+            evddnodes[hash].hash = n;
+        } 
+        // not marked or free, free the slot
+        else {
+            EVDDLOWp(node) = -1;
+            EVDDHIGHp(node) = 0;
+            EVDDWLOWp(node) = EVDD_VALUE_ONE;
+            EVDDWHIGHp(node) = EVDD_VALUE_ONE;
+            EVDDLEVELp(node) = 0;
+            node->refcou = 0;
+            node->mark = 0;
+            node->next = evddfreepos;
+            evddfreepos = n;
+            evddfreenum++;
+        }
+    }
+
+    /* TODO: evdd_operator_reset() when op caches exist. */
 }
