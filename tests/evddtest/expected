@@ -186,6 +186,19 @@ PASS: makenode weight-normalizes then calls raw
 PASS: makenode high weight is w_high/incoming
 PASS: makenode and raw agree on normalized key
 
+== evdd_normalize ==
+PASS: normalize: evdd_init
+PASS: normalize false is false
+PASS: normalize true is true
+PASS: normalize(raw) matches eager makenode (single node)
+PASS: normalize(raw DAG) matches eager makenode throughout
+PASS: normalize multiplies root incoming weight
+PASS: diamond raw: left and right share mid
+PASS: normalize(diamond) matches eager makenode
+PASS: diamond: left and right stay distinct nodes
+PASS: diamond: shared mid remains one node after normalize
+PASS: diamond: shared child is the eager-normalized mid
+
 ----------------------------------------
-passed=137 failed=0
+passed=148 failed=0
 All tests passed.
