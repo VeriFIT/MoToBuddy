@@ -7,6 +7,9 @@ project(buddy
 )
 cmake_policy(SET CMP0077 NEW)
 
+# For clangd / cpptools Go to Definition (symlink or copy to repo root after configure).
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 # ============================================================================ #
 # Settings
 # ============================================================================ #
