@@ -574,6 +574,7 @@ int bdd_fnload(char *fname, BDD *root)
    FILE *ifile;
    int ok;
 
+   *root = 0;
    if ((ifile=fopen(fname,"r")) == NULL)
       return bdd_error(BDD_FILE);
 
@@ -599,6 +600,13 @@ int bdd_load(FILE *ifile, BDD *root)
    char *token;
    bool started = false;
    char *convCheck; // char that will be leftover after converting, can signal error
+   /* The loader keeps its hash table and unresolved-node bookkeeping in
+      statics; start every load from a clean slate and never leave the
+      caller's root undefined on an error return. */
+   *root = 0;
+   lh_count = 0;
+   lh_freepos = 0;
+   unresolved = 0;
    while(!orderR)
    {
       if(getline(&line, &lineSize, ifile) == -1){
@@ -736,6 +744,7 @@ int bdd_load(FILE *ifile, BDD *root)
    {
       lh_table[n].first = -1;
       lh_table[n].next = n+1;
+      lh_table[n].data = 0;   /* so the delref loop below is safe for unused slots */
    }
    lh_table[lh_nodenum-1].next = -1;
    lh_freepos = 0;
