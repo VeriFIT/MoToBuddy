@@ -55,16 +55,20 @@ jobs:
       - name: Generate Cobertura report
         run: make coverage-report
 
-      # Uploading is best-effort: until the repository is activated on Codecov
-      # and CODECOV_TOKEN is set, this step reports a failure that should not
-      # turn the whole job red. Flip fail_ci_if_error to true once the token
-      # is in place and you want a missing upload to be treated as an error.
+      # CODECOV_TOKEN is set as a repository secret, so a failed upload is a
+      # real error and reddens the job.
+      # Only the gcovr report is sent. Left to itself the action also runs
+      # gcov over every .gcda in the tree and uploads the raw .gcov files,
+      # which drags in the examples, CMake's compiler-id objects and the C++
+      # standard library headers.
       - name: Upload to Codecov
         uses: codecov/codecov-action@v7
         with:
           files: ./coverage.xml
+          disable_search: true
+          plugins: noop
           token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: false
+          fail_ci_if_error: true
 
       # Keeps the numbers reachable even when the Codecov upload is skipped.
       - name: Archive coverage report
