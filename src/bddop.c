@@ -292,6 +292,11 @@ void bdd_operator_varresize(void)
 
    memset(quantvarset, 0, sizeof(int)*bddvarnum);
    quantvarsetID = 0;
+
+      /* Satisfying-assignment counts depend on the number of variables
+         (the constants sit at level bddvarnum), so counts cached before
+         the change are wrong after it. */
+   BddCache_reset(&misccache);
 }
 
 static void mtbdd_operator_noderesize(void)

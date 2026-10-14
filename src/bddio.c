@@ -606,6 +606,7 @@ int bdd_load(FILE *ifile, BDD *root)
    *root = 0;
    lh_count = 0;
    lh_freepos = 0;
+   lh_nodenum = LH_INIT_VALUE;   /* a file without %Nodes must not inherit the last file's count */
    unresolved = 0;
    while(!orderR)
    {
@@ -737,6 +738,8 @@ int bdd_load(FILE *ifile, BDD *root)
    if (vnum > bddvarnum)
       bdd_setvarnum(vnum);
 
+   if (lh_nodenum < 1)   /* "%Nodes 0" on a non-constant BDD */
+      lh_nodenum = 1;
    if ((lh_table=(LoadHash*)malloc(lh_nodenum*sizeof(LoadHash))) == NULL)
       return bdd_error(BDD_MEMORY);
 
@@ -744,6 +747,7 @@ int bdd_load(FILE *ifile, BDD *root)
    {
       lh_table[n].first = -1;
       lh_table[n].next = n+1;
+      lh_table[n].key = 0;
       lh_table[n].data = 0;   /* so the delref loop below is safe for unused slots */
    }
    lh_table[lh_nodenum-1].next = -1;
@@ -886,13 +890,9 @@ static int bdd_loaddata(FILE *ifile)
 }
 
 
-static void loadhash_add(int key, int data)
+/* Links entry slot pos into its bucket. The caller guarantees a free slot. */
+static void loadhash_insert(int key, int data)
 {
-   if(lh_count >= lh_nodenum*LH_INIT_REALLOC_FACTOR)
-   {
-      loadhash_realloc();
-   }
-
    int hash = key % lh_nodenum;
    int pos = lh_freepos;
 
@@ -903,6 +903,15 @@ static void loadhash_add(int key, int data)
    lh_table[pos].key = key;
    lh_table[pos].data = data;
    lh_count++;
+}
+
+
+static void loadhash_add(int key, int data)
+{
+      /* Grow once every entry slot is used. */
+   if (lh_freepos == -1  &&  loadhash_realloc() < 0)
+      return;
+   loadhash_insert(key, data);
 }
 
 
@@ -919,31 +928,35 @@ static int loadhash_get(int key)
 }
 
 
+/* Doubles the table and rehashes every entry. Used entries are found by
+   walking the bucket chains, so slots that were never filled are not read.
+   Does not call loadhash_add, which could otherwise grow the table again
+   in the middle of the copy. */
 static int loadhash_realloc()
 {
    int oldSize        = lh_nodenum;
    LoadHash *oldTable = lh_table;
+   LoadHash *newTable;
 
-   lh_nodenum         = lh_nodenum * 2;
-
-   if ((lh_table=(LoadHash*)malloc(lh_nodenum*sizeof(LoadHash))) == NULL)
+   if ((newTable=(LoadHash*)malloc(2*oldSize*sizeof(LoadHash))) == NULL)
       return bdd_error(BDD_MEMORY);
 
+   lh_table   = newTable;
+   lh_nodenum = 2*oldSize;
    for (int n=0 ; n<lh_nodenum ; n++)
    {
       lh_table[n].first = -1;
       lh_table[n].next = n+1;
+      lh_table[n].key = 0;
+      lh_table[n].data = 0;
    }
    lh_table[lh_nodenum-1].next = -1;
    lh_freepos = 0;
+   lh_count = 0;
 
-   for(int n = 0; n < oldSize; n++)
-   {
-      if(oldTable[n].key != 0)
-      {
-         loadhash_add(oldTable[n].key, oldTable[n].data);
-      }
-   }
+   for (int b = 0; b < oldSize; b++)
+      for (int p = oldTable[b].first; p != -1; p = oldTable[p].next)
+         loadhash_insert(oldTable[p].key, oldTable[p].data);
 
    free(oldTable);
    return 0;
