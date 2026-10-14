@@ -9,8 +9,8 @@
  * Node layout (28 B): low, high, w_low, w_high (ValueIDs),
  * refcou/level/mark, hash, next. Unique key:
  * (level, low, high, w_low, w_high). Eager makenode stores the
- * weight-normalized pair; makenode_raw stores the raw pair. No
- * ROBDD skip-reduction.
+ * weight-normalized pair; makenode_raw stores the raw pair.
+ * Both skip-reduce when the two cofactor edges are equal.
  */
 
 #ifndef EVDD_KERNEL_H
@@ -108,6 +108,8 @@ extern EvddNode *evddnodes;
 extern int       evddfreepos;
 extern int       evddfreenum;
 extern int       evddproduced;
+
+void evdd_unmark(int i);
 
 #ifdef __cplusplus
 }

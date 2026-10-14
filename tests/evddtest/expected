@@ -109,6 +109,11 @@ PASS: high / low keeps sign
 PASS: incoming keeps the low value
 PASS: both zero: all ZERO
 
+== normalize low-edge ==
+PASS: low-edge strategy accepted
+PASS: nonzero low: same as first-nonzero
+PASS: zero low: keep high, incoming ONE (no high fallback)
+
 == normalize max-magnitude ==
 PASS: larger |w| edge becomes ONE
 PASS: other edge divided by max
@@ -179,7 +184,10 @@ PASS: raw returns (ONE, node>=2)
 PASS: raw stores level and child node ids
 PASS: raw stores child edge weights on the node
 PASS: raw unique hit shares node
-PASS: raw does not skip-reduce equal children
+PASS: raw skip-reduces equal children to that edge
+PASS: eager skip-reduces equal children to that edge
+PASS: raw skip-reduce keeps common edge weight
+PASS: eager skip-reduce folds normalized incoming onto edge
 PASS: raw keeps unnormalized weights and uniquifies them
 PASS: different outgoing weight => different node
 PASS: makenode weight-normalizes then calls raw
@@ -211,6 +219,41 @@ PASS: unique hit still works after gbc
 PASS: delref drops refcou to 0
 PASS: gbc frees node after last delref
 
+== evdd_apply ==
+PASS: apply: evdd_init
+PASS: apply mul on TRUE edges multiplies weights
+PASS: apply add on TRUE edges adds weights
+PASS: apply mul with FALSE is FALSE
+PASS: apply cache returns same edge on second call
+PASS: apply mul: low path value is 0
+PASS: apply mul: high path value is 8
+PASS: apply mul: scale level-1 diagram by constant 2
+
+== evdd gate-style ==
+PASS: gates: evdd_init
+PASS: ket0 amplitudes (1,0)
+PASS: ket1 amplitudes (0,1)
+PASS: X|0> = |1>
+PASS: X|1> = |0>
+PASS: X maps basis states onto each other (unique table)
+PASS: scalar mul 3|1> amplitudes (0,3)
+PASS: psi amplitudes (2,4)
+PASS: X|psi> swaps amplitudes
+PASS: X on q0 sends |10> to |00|-shaped node (high is FALSE)
+PASS: X|10> low cofactor is |0> on q1 with amp 1
+PASS: apply-add builds 2|0>+3|1>
+
+== evdd_printdot ==
+PASS: dot: evdd_init
+PASS: dot: open_memstream
+PASS: dot: digraph header
+PASS: dot: root incoming edge
+PASS: dot: low edge dashed
+PASS: dot: high edge solid
+PASS: dot: level label on node
+PASS: dot: prints weight 4 on an edge
+PASS: dot: second print after unmark
+
 ----------------------------------------
-passed=158 failed=0
+passed=190 failed=0
 All tests passed.

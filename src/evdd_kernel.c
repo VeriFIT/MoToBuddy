@@ -3,19 +3,19 @@
  * @brief EVDD kernel - init/done, unique table, makenode, GC, refs, vars.
  *
  * Stripped counterpart of kernel.c for evddnodes. No pairs, reorder, FDD,
- * or mtbdd_delete_terminal. No ROBDD skip-reduction.
+ * or mtbdd_delete_terminal.
  *
  * makenode: weight-normalize then unique.
- * makenode_raw: unique only (no weight-normalize).
+ * makenode_raw: unique only (no weight-normalize);.
  * evdd_normalize: DAG pass that weight-normalizes and re-uniques.
  */
 
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "bdd.h"
 #include "evdd_kernel.h"
+#include "evdd_op.h"
 #include "evdd_value.h"
 #include "prime.h"
 
@@ -111,6 +111,15 @@ int evdd_init(int initnodesize)
     evddproduced = 0;
     evddmaxnodesize = 0;
     evddrunning = 1;
+
+    {
+        int err = evdd_operator_init(size);
+        if (err < 0) {
+            free(evddnodes);
+            evdd_clear_table_state();
+            return err;
+        }
+    }
     return 0;
 }
 
@@ -119,6 +128,7 @@ void evdd_done(void)
     if (!evddrunning && evddnodes == NULL)
         return;
 
+    evdd_operator_done();
     free(evddnodes);
     evdd_clear_table_state();
 }
@@ -228,6 +238,12 @@ EVDD evdd_makenode_raw(unsigned int level, EVDD low, EVDD high)
     if (!evddrunning) {
         bdd_error(BDD_RUNNING);
         return evdd_false();
+    }
+
+    if (lchild == hchild && wl == wh) {
+        out.node = lchild;
+        out.w = wl;
+        return out;
     }
 
     /* Find the node in the unique table. */
@@ -393,6 +409,22 @@ static void evdd_mark(int i)
     evdd_mark(EVDDHIGHp(node));
 }
 
+void evdd_unmark(int i)
+{
+    EvddNode *node;
+
+    if (i < 2)
+        return;
+
+    node = &evddnodes[i];
+    if (!EVDDMARKEDp(node) || EVDDLOWp(node) == -1)
+        return;
+    EVDDUNMARKp(node);
+
+    evdd_unmark(EVDDLOWp(node));
+    evdd_unmark(EVDDHIGHp(node));
+}
+
 void evdd_gbc(void)
 {
     int n;
@@ -400,7 +432,7 @@ void evdd_gbc(void)
     if (!evddrunning)
         return;
 
-    /* Mark from external roots. Sinks stay alive via MAXREF. No refstack yet. */
+    /* Mark from external roots. Sinks stay alive via MAXREF. */
     for (n = 0; n < evddnodesize; n++) {
         if (evddnodes[n].refcou > 0)
             evdd_mark(n);
@@ -439,5 +471,5 @@ void evdd_gbc(void)
         }
     }
 
-    /* TODO: evdd_operator_reset() when op caches exist. */
+    evdd_operator_reset();
 }

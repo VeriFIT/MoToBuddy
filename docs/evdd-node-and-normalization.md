@@ -32,7 +32,7 @@ Design brief for extending MoToBuDDy with **multiplicative** edge-valued decisio
 | **Weight-normalize** (`evdd_value_normalize`) | Local rewrite of one node's two outgoing weights: $(w_0,w_1)\to(w_0',w_1',\mathrm{factor})$. Does not allocate nodes. |
 | **Diagram normalize** (`evdd_normalize`) | Bottom-up DAG walk: at each node, weight-normalize then unique-table insert. Makes a raw-built diagram canonical. |
 | **Unique lookup** | Hash/insert on key `(level, low, high, w_low, w_high)` as stored on the node. |
-| **Skip-reduction** | ROBDD-style "both cofactors equal → drop this node". **Not used** in EVDD. |
+| **Skip-reduction** | ROBDD-style "both cofactor edges equal → drop this node" and return that edge. Used in `evdd_makenode` / `evdd_makenode_raw`. |
 
 Public root is always an edge `EVDD { node, w }`, not a bare node id. Incoming root weight is held only on that handle; the node table does not store incoming edges.
 
@@ -96,7 +96,7 @@ Weight-normalization rewrites the two outgoing weights and pushes a factor onto 
 
 **Kernel vs strategy.** The callback does not allocate nodes. It only maps $(w_0,w_1)$ to $(w_0',w_1',\mathrm{factor})$. Eager `evdd_makenode` then hashes `(level, low, high, w0', w1')` and returns the edge `(factor, node)`.
 
-**No skip-reduction.** EVDD never drops a node because both cofactors are equal. That BuDDy `checkSameChildren` behaviour is out of scope.
+**Skip-reduction.** If both outgoing edges are equal (same child node and same weight ValueID), makenode returns that edge instead of allocating a node. Same idea as BuDDy `checkSameChildren`, extended to weighted edges. Runs in both eager and raw paths (after weight-normalize for eager).
 
 **Value domain is independent.** Built-ins (double, int, later complex double) register mul/div themselves. CUSTOM registers hash, equal, free, mul, and whatever the chosen strategy needs. If a type cannot implement L2 (no sqrt), that strategy is rejected at set-normalization, not in the middle of makenode.
 
@@ -117,13 +117,13 @@ Weight-normalization strategy is set per `type_id` at registration and frozen un
 
 # Makenode API (eager vs raw)
 
-Both paths share unique-table lookup/insert. They differ only by whether weight-normalization runs before the key is formed. Neither path skip-reduces.
+Both paths share unique-table lookup/insert and skip-reduction. They differ only by whether weight-normalization runs before the key is formed.
 
-| API | Weight-normalize? | Unique lookup? | Canonical? |
-|---|---|---|---|
-| `evdd_makenode(level, low, high)` | **Yes** (local `evdd_value_normalize`) | Yes on normalized key | Yes if children are already canonical |
-| `evdd_makenode_raw(level, low, high)` | **No** | Yes on raw key | No (identical raw subgraphs still share) |
-| `evdd_normalize(root)` | Yes at every node (bottom-up) | Yes on normalized keys | **Yes** - same function as eager makenode throughout |
+| API | Weight-normalize? | Unique lookup? | Skip-reduce? | Canonical? |
+|---|---|---|---|---|
+| `evdd_makenode(level, low, high)` | **Yes** (local `evdd_value_normalize`) | Yes on normalized key | Yes | Yes if children are already canonical |
+| `evdd_makenode_raw(level, low, high)` | **No** | Yes on raw key | Yes | No (identical raw subgraphs still share) |
+| `evdd_normalize(root)` | Yes at every node (bottom-up) | Yes on normalized keys | Yes | **Yes** - same function as eager makenode throughout |
 
 Natural uses of raw + diagram normalize: bulk MTBDD→EVDD, then one `evdd_normalize`; building a circuit fragment without normalizing every intermediate, then normalize once.
 
@@ -142,4 +142,4 @@ API sketch: `mtbdd_to_evdd(BDD, type_id)` and `evdd_to_mtbdd(EVDD, type_id)`, ca
 
 # Recommended starting point
 
-Layout A: two interned ValueIDs per node, 28 B, one EVDD unique table. Intern rows are `(type_id, payload)`. CUSTOM-style multi-type; one frozen weight-normalization per `type_id`. Hard error on mixed-type ops. No skip-reduction. Eager `evdd_makenode` or raw + `evdd_normalize`. Compact form C later, only for unit-edge strategies. Existing 20-byte BDD/MTBDD nodes unchanged. MTBDD ↔ EVDD conversion is a planned oracle, not v1 kernel work: uniquing and gates first, then translate, then gate-by-gate compare.
+Layout A: two interned ValueIDs per node, 28 B, one EVDD unique table. Intern rows are `(type_id, payload)`. CUSTOM-style multi-type; one frozen weight-normalization per `type_id`. Hard error on mixed-type ops. Skip-reduction on equal cofactor edges. Eager `evdd_makenode` or raw + `evdd_normalize`. Compact form C later, only for unit-edge strategies. Existing 20-byte BDD/MTBDD nodes unchanged. MTBDD ↔ EVDD conversion is a planned oracle, not v1 kernel work: uniquing and gates first, then translate, then gate-by-gate compare.
