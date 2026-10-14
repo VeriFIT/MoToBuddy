@@ -1,0 +1,76 @@
+name: coverage
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  coverage:
+    name: gcov -> Codecov
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # gcovr comes from apt rather than pip: the runner's Python is
+      # externally managed (PEP 668), so `pip install gcovr` is unreliable.
+      - name: Install build and coverage dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake g++ tcsh gcovr
+
+      - name: Show toolchain
+        run: |
+          gcc --version | head -1
+          gcov --version | head -1
+          gcovr --version | head -1
+
+      # COVERAGE=1 selects the debug build type (-O0 -g) plus --coverage for
+      # compiling and linking, so the library objects are instrumented and
+      # libgcov is pulled in.
+      - name: Build with coverage instrumentation
+        run: make build COVERAGE=1
+
+      - name: MTBDD and quantum gate suites
+        run: examples/check.sh mtbddtest quantum_gates
+
+      # Same split as tests.yml. These suites fail on main today, and the ones
+      # that die through abort() leave no .gcda behind, but whatever runs to
+      # completion still adds to the picture. Not a gate here either.
+      - name: Plain BDD suites (known failing on main)
+        continue-on-error: true
+        run: examples/check.sh adder bddcalc bddtest cmilner fdd milner money queen
+
+      - name: Generate Cobertura report
+        run: make coverage-report
+
+      # Uploading is best-effort: until the repository is activated on Codecov
+      # and CODECOV_TOKEN is set, this step reports a failure that should not
+      # turn the whole job red. Flip fail_ci_if_error to true once the token
+      # is in place and you want a missing upload to be treated as an error.
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v7
+        with:
+          files: ./coverage.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
+      # Keeps the numbers reachable even when the Codecov upload is skipped.
+      - name: Archive coverage report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          if-no-files-found: warn
