@@ -1,0 +1,180 @@
+MoToBuddy BDD differential test suite
+
+== default table ==
+PASS: default table: apply (all 10 operators) agrees with truth tables on 150 random cases
+PASS: default table: not agrees with truth tables on 150 random cases
+PASS: default table: ite agrees with truth tables on 150 random cases
+PASS: default table: exist agrees with truth tables on 150 random cases
+PASS: default table: forall agrees with truth tables on 150 random cases
+PASS: default table: unique agrees with truth tables on 150 random cases
+PASS: default table: appex agrees with truth tables on 150 random cases
+PASS: default table: appall agrees with truth tables on 150 random cases
+PASS: default table: appuni agrees with truth tables on 150 random cases
+PASS: default table: restrict agrees with truth tables on 150 random cases
+PASS: default table: constrain agrees with truth tables on 150 random cases
+PASS: default table: simplify agrees with truth tables on 150 random cases
+PASS: default table: compose agrees with truth tables on 150 random cases
+PASS: default table: veccompose agrees with truth tables on 150 random cases
+PASS: default table: replace agrees with truth tables on 150 random cases
+PASS: default table: satcount agrees with truth tables on 150 random cases
+PASS: default table: satcountset agrees with truth tables on 150 random cases
+PASS: default table: satone agrees with truth tables on 150 random cases
+PASS: default table: satoneset agrees with truth tables on 150 random cases
+PASS: default table: fullsatone agrees with truth tables on 150 random cases
+PASS: default table: allsat agrees with truth tables on 150 random cases
+PASS: default table: support agrees with truth tables on 150 random cases
+
+== tiny table with automatic sifting ==
+PASS: tiny table with automatic sifting: apply (all 10 operators) agrees with truth tables on 150 random cases
+PASS: tiny table with automatic sifting: not agrees with truth tables on 150 random cases
+PASS: tiny table with automatic sifting: ite agrees with truth tables on 150 random cases
+PASS: tiny table with automatic sifting: exist agrees with truth tables on 150 random cases
+PASS: tiny table with automatic sifting: forall agrees with truth tables on 150 random cases
+PASS: tiny table with automatic sifting: unique agrees with truth tables on 150 random cases
+PASS: tiny table with automatic sifting: appex agrees with truth tables on 150 random cases
+PASS: tiny table with automatic sifting: appall agrees with truth tables on 150 random cases
+PASS: tiny table with automatic sifting: appuni agrees with truth tables on 150 random cases
+PASS: tiny table with automatic sifting: restrict agrees with truth tables on 150 random cases
+PASS: tiny table with automatic sifting: constrain agrees with truth tables on 150 random cases
+PASS: tiny table with automatic sifting: simplify agrees with truth tables on 150 random cases
+PASS: tiny table with automatic sifting: compose agrees with truth tables on 150 random cases
+PASS: tiny table with automatic sifting: veccompose agrees with truth tables on 150 random cases
+PASS: tiny table with automatic sifting: replace agrees with truth tables on 150 random cases
+PASS: tiny table with automatic sifting: satcount agrees with truth tables on 150 random cases
+PASS: tiny table with automatic sifting: satcountset agrees with truth tables on 150 random cases
+PASS: tiny table with automatic sifting: satone agrees with truth tables on 150 random cases
+PASS: tiny table with automatic sifting: satoneset agrees with truth tables on 150 random cases
+PASS: tiny table with automatic sifting: fullsatone agrees with truth tables on 150 random cases
+PASS: tiny table with automatic sifting: allsat agrees with truth tables on 150 random cases
+PASS: tiny table with automatic sifting: support agrees with truth tables on 150 random cases
+PASS: automatic reordering ran during the operations
+
+== argument checks ==
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+check
+checkA
+checkA
+check
+check
+check
+PASS: every entry point rejects a negative id with BDD_ILLBDD
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+checkA
+check
+checkA
+checkA
+check
+check
+check
+addref1
+delref1
+PASS: every entry point rejects a id beyond the table with BDD_ILLBDD
+checkA2 14
+checkA2 14
+checkA2 14
+checkA2 14
+checkA2 14
+checkA2 14
+checkA2 14
+checkA2 14
+checkA2 14
+checkA2 14
+checkA2 14
+checkA2 14
+checkA2 14
+checkA2 14
+checkA2 14
+checkA2 14
+checkA2 14
+checkA2 14
+checkA2 14
+checkA2 14
+checkA2 14
+checkA2 14
+checkA2 14
+checkA2 14
+checkA2 14
+checkA2 14
+checkA2 14
+checkA2 14
+checkA2 14
+checkA2 14
+checkA2 14
+checkA2 14
+checkA2 14
+check2
+checkA2 14
+checkA2 14
+check2
+check2
+check2
+addref2
+delref2
+PASS: every entry point rejects a freed node with BDD_ILLBDD
+PASS: unknown operator codes are BDD_OP
+PASS: entry points before bdd_init report BDD_RUNNING
+
+Summary: 50 passed, 0 failed
