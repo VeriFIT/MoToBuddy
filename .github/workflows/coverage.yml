@@ -42,15 +42,8 @@ jobs:
       - name: Build with coverage instrumentation
         run: make build COVERAGE=1
 
-      - name: MTBDD and quantum gate suites
-        run: examples/check.sh mtbddtest quantum_gates
-
-      # Same split as tests.yml. These suites fail on main today, and the ones
-      # that die through abort() leave no .gcda behind, but whatever runs to
-      # completion still adds to the picture. Not a gate here either.
-      - name: Plain BDD suites (known failing on main)
-        continue-on-error: true
-        run: examples/check.sh adder bddcalc bddtest cmilner fdd milner money queen
+      - name: Example suites
+        run: make test
 
       - name: Generate Cobertura report
         run: make coverage-report

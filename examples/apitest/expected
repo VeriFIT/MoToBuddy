@@ -1,0 +1,292 @@
+MoToBuddy BDD API test suite
+
+== kernel ==
+PASS: not running before bdd_init
+PASS: running after bdd_init
+PASS: versionstr non-empty
+PASS: versionnum positive
+PASS: varnum after setvarnum
+PASS: extvarnum returns old count
+PASS: varnum after extvarnum
+PASS: bdd_var of ithvar
+PASS: ithvar children
+PASS: nithvar children
+PASS: bdd_true/bdd_false
+PASS: setmaxincrease returns old value
+PASS: setmaxincrease round trip
+PASS: default minfreenodes is 20
+PASS: setminfreenodes round trip
+PASS: minfreenodes above 100 is BDD_RANGE
+PASS: default maxnodenum is 0 (unlimited)
+PASS: setmaxnodenum round trip
+PASS: maxnodenum below current size is BDD_NODES
+PASS: setcacheratio accepted
+PASS: setcacheratio 0 is BDD_RANGE
+PASS: ithvar out of range is BDD_VAR
+PASS: nithvar out of range is BDD_VAR
+PASS: shrinking varnum is BDD_DECVNUM
+PASS: errstring for a known code
+PASS: errstring for an unknown code is NULL
+PASS: errstring for success is NULL
+PASS: bdd_stats reports varnum and nodenum
+PASS: bdd_cachestats readable
+PASS: fprintstat writes statistics
+PASS: getnodenum positive
+PASS: getallocnum at least nodenum
+PASS: nodes remain after gbc
+PASS: gbc reclaims the unreferenced node
+PASS: built a large multiplier BDD
+PASS: node table grew
+PASS: resize hook called when the table grows
+PASS: not running after bdd_done
+
+== operators ==
+PASS: bdd_not
+PASS: bdd_and
+PASS: bdd_or
+PASS: bdd_xor
+PASS: bdd_imp
+PASS: bdd_biimp
+PASS: bddop_nand
+PASS: bddop_nor
+PASS: bddop_diff
+PASS: bddop_less
+PASS: bddop_invimp
+PASS: unknown operator is BDD_OP
+PASS: bdd_ite
+PASS: bdd_ite constants
+PASS: restrict a=1
+PASS: restrict a=0
+PASS: restrict two literals
+PASS: restrict by true is identity
+PASS: constrain by true is identity
+PASS: constrain agrees on the care set
+PASS: constrain by false
+PASS: simplify agrees on the domain
+PASS: simplify by true is identity
+PASS: simplify by false
+PASS: compose
+PASS: compose of absent variable
+PASS: replace 0->2
+PASS: resetpair makes replace identity
+PASS: veccompose
+PASS: setpairs
+PASS: setbddpairs
+PASS: setpair out of range is BDD_VAR
+PASS: exist
+PASS: forall
+PASS: unique over a&b
+PASS: unique over a|b
+PASS: exist over two variables
+PASS: forall over three variables
+PASS: appex
+PASS: appall
+PASS: appuni
+PASS: appex equals exist of apply
+PASS: appall equals forall of apply
+PASS: appuni equals unique of apply
+PASS: quantifying over an empty set is identity
+PASS: support is the variable cube
+PASS: support of a 3-variable function
+PASS: support of a constant is false
+PASS: satone implies f
+PASS: satoneset covers the whole set
+PASS: fullsatone assigns every variable
+PASS: satone of false
+PASS: allsat visits two paths of a|b
+PASS: satcount of a&b over 4 variables
+PASS: satcount of constants
+PASS: satcountset
+PASS: satcountln
+PASS: satcountlnset
+PASS: pathcount
+PASS: nodecount
+PASS: nodecount of a constant
+PASS: anodecount counts shared nodes once
+PASS: varprofile
+PASS: buildcube
+PASS: ibuildcube
+PASS: makeset
+PASS: scanset
+PASS: scanset of true is empty
+
+== reordering ==
+PASS: reorder_probe returns the previous handler
+PASS: reorder win2 preserves f and the level maps
+PASS: reorder win2ite preserves f and the level maps
+PASS: reorder win3 preserves f and the level maps
+PASS: reorder win3ite preserves f and the level maps
+PASS: reorder sift preserves f and the level maps
+PASS: reorder siftite preserves f and the level maps
+PASS: reorder random preserves f and the level maps
+PASS: sifting found a smaller order
+PASS: size probe consulted during reordering
+PASS: reorder_gain is a percentage
+PASS: same function rebuilt after reordering is identical
+PASS: autoreorder returns old method
+PASS: getreorder_method
+PASS: multiplier built under automatic reordering
+PASS: automatic reordering preserves f
+PASS: reorder hook called before and after an automatic reordering
+PASS: getreorder_times
+PASS: fprintorder writes something
+PASS: blockfile_hook returns previous handler
+PASS: block printer used by fprintorder
+PASS: block of non-adjacent variables is BDD_VARBLK
+PASS: intaddvarblock
+PASS: addvarblock from a cube
+PASS: overlapping block is BDD_VARBLK
+PASS: block covering the remaining variables
+PASS: reorder with explicit blocks preserves f
+PASS: setvarorder installs the reversed order
+PASS: setvarorder preserves f
+PASS: swapvar exchanges levels
+PASS: swapvar preserves f
+PASS: swapvar out of range is BDD_VAR
+
+== fdd ==
+PASS: first domain index is 0
+PASS: four domains
+PASS: domainsize
+PASS: varnum per domain
+PASS: vars of domain 0 are interleaved with the others
+PASS: ten boolean variables in total
+PASS: scanvar
+PASS: scanvar of unconstrained domain and of false
+PASS: scanallvar
+PASS: ithvar beyond domain is BDD_RANGE
+PASS: ithvar of unknown domain is BDD_VAR
+PASS: ithset is the cube of the domain variables
+PASS: power-of-two domain is unrestricted
+PASS: domain of size 5 has 5 values
+PASS: equals relates 4 value pairs
+PASS: equals is symmetric
+PASS: equals on different sizes is BDD_RANGE
+PASS: makeset
+PASS: scanset
+PASS: fdd_setpair renames domain 0 to 3
+PASS: fdd_setpairs
+PASS: setpair on different sizes is BDD_VARNUM
+this has no ref: 50
+PASS: intaddvarblock over domains
+PASS: fdd_fprintset
+fdd_printset: <0:3, 1:5>
+PASS: fdd_file_hook returns previous handler
+PASS: fdd_file_hook names the domain
+PASS: fddset stream format
+PASS: fdd_strm_hook returns previous handler
+PASS: fdd_strm_hook names the domain
+PASS: overlapdomain adds a fifth domain
+PASS: overlap domain spans both variable sets
+PASS: clearall removes all domains
+PASS: domains can be added after clearall
+
+== bvec ==
+PASS: bvec_con
+PASS: bvec_true
+PASS: bvec_false
+PASS: coerce down truncates
+PASS: coerce up zero-extends
+PASS: bvec_copy
+PASS: default bvec is empty
+PASS: bvec assignment
+PASS: bvec copy constructor
+PASS: bvec(bitnum) is zero
+PASS: bvec(bitnum, val)
+PASS: bvec::set and operator[]
+PASS: add constants
+PASS: sub constants
+PASS: mulfixed constants
+PASS: mul constants
+PASS: divfixed constants
+PASS: div constants
+PASS: divfixed by zero is BVEC_DIVZERO
+PASS: add with mismatched widths is BVEC_SIZE
+PASS: shlfixed constants
+PASS: shrfixed constants
+PASS: shl constants
+PASS: shr constants
+PASS: shlfixed fills with the carry-in
+PASS: ite true
+PASS: ite false
+PASS: lth constants
+PASS: lte constants
+PASS: gth constants
+PASS: gte constants
+PASS: equ constants
+PASS: neq constants
+PASS: variable vector is not constant
+PASS: bvec_var places bit i at offset+i*step
+PASS: bvec_varvec
+PASS: operator! maps bdd_not
+PASS: operator& maps bdd_and
+PASS: operator| maps bdd_or
+PASS: operator^ maps bdd_xor
+PASS: bvec_map1
+PASS: bvec_map2
+PASS: bvec_map3
+PASS: bvec stream output
+this has no ref: 232
+this has no ref: 100
+PASS: arithmetic and relations agree with integers on all 64 assignments
+PASS: bvec_varfdd has the domain's width
+PASS: bvec_varfdd matches fdd_ithvar
+PASS: bvec_varfdd of unknown domain is BDD_VAR
+
+== io ==
+PASS: fprintall
+PASS: fprinttable mentions the root
+PASS: fprintset
+PASS: fprintset of true
+PASS: fprintset of false
+printset: <0:1, 1:0>
+PASS: file_hook returns previous handler
+PASS: file_hook names variables
+PASS: fprintdot writes a digraph
+PASS: fnprintdot returns 0
+PASS: fnprintdot wrote the file
+PASS: fnprintdot to an unwritable path is BDD_FILE
+PASS: fnsave returns 0
+PASS: fnsave writes the header
+PASS: fnload returns 0
+PASS: loaded BDD equals the saved one
+PASS: fnsave of a constant with default name
+PASS: fnload of a constant
+PASS: save to a stream
+PASS: save writes the root
+PASS: load of a headerless stream is BDD_FORMAT
+PASS: fnload of a missing file is BDD_FILE
+PASS: load with a bad %Vars line is BDD_FORMAT
+PASS: load of a hand-written single node
+PASS: load grows the variable count
+PASS: bddset stream format
+PASS: bddtable stream format
+PASS: bdddot stream format
+PASS: bddall stream format
+PASS: stream output of constants
+PASS: strm_hook returns previous handler
+PASS: strm_hook names variables
+
+== C++ wrappers ==
+PASS: operator&
+PASS: operator|
+PASS: operator^
+PASS: operator! and operator~
+PASS: operator>> is implication
+PASS: operator- is difference
+PASS: operator> is difference
+PASS: operator< is less
+PASS: operator<< is inverse implication
+PASS: operator&=
+PASS: operator|=
+PASS: operator^=
+PASS: operator>>=
+PASS: operator-=
+PASS: operator<<=
+PASS: operator!=
+PASS: id of equal BDDs
+PASS: copy constructor
+PASS: default constructed bdd is false
+PASS: node accessors
+
+Summary: 270 passed, 0 failed
