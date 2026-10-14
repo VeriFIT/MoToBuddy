@@ -1,0 +1,37 @@
+# Codecov configuration for MoToBuddy.
+# Reference: https://docs.codecov.com/docs/codecov-yaml
+
+codecov:
+  require_ci_to_pass: true
+
+coverage:
+  precision: 1
+  round: nearest
+  range: "60...90"
+
+  status:
+    # Both statuses are informational: they report coverage movement on the PR
+    # but never block a merge. `tests` is the gate; this is the trend line.
+    project:
+      default:
+        target: auto
+        threshold: 2%
+        informational: true
+    patch:
+      default:
+        target: auto
+        threshold: 2%
+        informational: true
+
+# Measure the library, not the harness around it. gcovr already filters to
+# src/, so this mainly guards against the filter being loosened later.
+ignore:
+  - "examples/**"
+  - "build/**"
+  - "doc/**"
+
+comment:
+  layout: "condensed_header, diff, files"
+  behavior: default
+  # Stay quiet on PRs that do not move coverage at all.
+  require_changes: true

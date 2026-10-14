@@ -1,6 +1,7 @@
 # MoToBuDDy
 
 [![tests](https://github.com/VeriFIT/MoToBuddy/actions/workflows/tests.yml/badge.svg)](https://github.com/VeriFIT/MoToBuddy/actions/workflows/tests.yml)
+[![coverage](https://codecov.io/gh/VeriFIT/MoToBuddy/branch/main/graph/badge.svg)](https://codecov.io/gh/VeriFIT/MoToBuddy)
 
 A fork of the [BuDDy BDD library](https://github.com/SSoelvsten/buddy) extended with full Multi-Terminal BDD (MTBDD) support, a JSON-based gate serialization format (MOSF), and quantum gate simulation examples.
 
@@ -31,6 +32,8 @@ The build system fetches [nlohmann/json](https://github.com/nlohmann/json) autom
 ### Testing
 
 Each example directory carries a `runtest` script and (mostly) an `expected` output. `make build` followed by `make test` runs them all through `examples/check.sh`, which prints PASSED/FAILED per example and exits non-zero on any failure. Individual examples can be selected by name, e.g. `examples/check.sh mtbddtest quantum_gates`. The same script is what CI runs.
+
+`make coverage` rebuilds with gcov instrumentation, runs the suites and writes a Cobertura report for `src/` to `coverage.xml` (needs `gcovr`). CI uploads the same report to Codecov.
 
 ---
 

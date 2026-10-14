@@ -8,3 +8,6 @@ x64/*
 .cache/
 
 /.vscode
+
+# gcovr output
+/coverage.xml
