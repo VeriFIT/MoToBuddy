@@ -9,6 +9,7 @@
 #undef CPLUSPLUS
 #endif
 
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -708,6 +709,417 @@ static void test_guarded_variants() {
     teardown();
 }
 
+/* ------------------------------------------------------------------------=
+ * Differential tests: random MTBDDs against explicit value tables
+ *
+ * An MTBDD over levels 0..DV-1 is also kept as a table of 2^DV int values
+ * (index bit i = value of level i). Random tables with few distinct values
+ * reduce to diagrams with skipped levels and shared subgraphs, and value 0
+ * is sometimes represented by the constant-0 node, so the recursions meet
+ * operands at different levels and constant operands. Each result is read
+ * back by evaluating every path and compared with the same operation on
+ * the tables. Every operation is repeated (cache hit) and repeated again
+ * after a garbage collection (cache reset).
+ * ---------------------------------------------------------------------= */
+
+static const int DV = 4;
+static const int DN = 1 << DV;
+
+static uint64_t g_mrng = 0x243F6A8885A308D3ULL;
+static int mrand(int n) {
+    g_mrng ^= g_mrng >> 12;
+    g_mrng ^= g_mrng << 25;
+    g_mrng ^= g_mrng >> 27;
+    return (int)((g_mrng * 0x2545F4914F6CDD1DULL) % (uint64_t)n);
+}
+
+typedef std::vector<int> Table;
+
+static Table random_table() {
+    Table t(DN);
+    int distinct = 1 + mrand(4);
+    for (int a = 0; a < DN; ++a)
+        t[a] = mrand(distinct);
+    /* Make the table independent of some levels. */
+    for (int v = 0; v < DV; ++v)
+        if (mrand(3) == 0)
+            for (int a = 0; a < DN; ++a)
+                t[a] = t[a & ~(1 << v)];
+    return t;
+}
+
+static BDD build_rec(Fixture &f, const Table &t, int level, int base, bool zero_as_const) {
+    if (level == DV) {
+        int v = t[base];
+        if (v == 0 && zero_as_const)
+            return 0;
+        return make_int_leaf(f, v);
+    }
+    BDD lo = build_rec(f, t, level + 1, base, zero_as_const);
+    PUSHREF(lo);
+    BDD hi = build_rec(f, t, level + 1, base | (1 << level), zero_as_const);
+    PUSHREF(hi);
+    BDD r = bdd_makenode(level, lo, hi);
+    POPREF(2);
+    return r;
+}
+
+static BDD build_table(Fixture &f, const Table &t) {
+    return bdd_addref(build_rec(f, t, 0, 0, mrand(2) == 0));
+}
+
+static Table eval_all(BDD n0) {
+    Table t(DN);
+    for (int a = 0; a < DN; ++a) {
+        BDD n = n0;
+        while (!ISCONST(n) && !ISTERMINAL(n))
+            n = ((a >> LEVEL(n)) & 1) ? HIGH(n) : LOW(n);
+        t[a] = leaf_int(n);
+    }
+    return t;
+}
+
+/* Guards for the guarded variants: act at leaves, recurse elsewhere. */
+static BDD guard_sum(BDD l, BDD r) {
+    if ((ISTERMINAL(l) || ISCONST(l)) && (ISTERMINAL(r) || ISCONST(r))) {
+        FLAG_VALID_APPLY();
+        return make_int_leaf(*g_guard_fixture, leaf_int(l) + leaf_int(r));
+    }
+    FLAG_INVALID_APPLY();
+    return 0;
+}
+
+static void *op_scale_param(void *v, size_t p) {
+    int x = v ? *(int *)v : 0;
+    return box_int(x * (int)p);
+}
+
+static BDD guard_cx_swap(size_t ctrl, BDD node) {
+    if (ctrl == g_swap_target && !ISCONST(node) && !ISTERMINAL(node) &&
+        (size_t)LEVEL(node) == ctrl) {
+        FLAG_VALID_OPERATION();
+        return bdd_makenode((int)ctrl, HIGH(node), LOW(node));
+    }
+    FLAG_INVALID_OPERATION();
+    return node;
+}
+
+struct DiffCheck {
+    const char *name;
+    int done = 0, bad = 0;
+};
+
+static void diff_record(DiffCheck &c, bool ok) {
+    ++c.done;
+    if (!ok)
+        ++c.bad;
+}
+
+/* Runs `compute` three times (fresh, cache hit, after gbc) and compares
+ * every result with `expect`. */
+template <class F>
+static bool stable_and_equal(F compute, const Table &expect) {
+    BDD r1 = bdd_addref(compute());
+    BDD r2 = bdd_addref(compute());
+    bdd_gbc();
+    BDD r3 = bdd_addref(compute());
+    bool ok = eval_all(r1) == expect && r1 == r2 && eval_all(r3) == expect;
+    bdd_delref(r1);
+    bdd_delref(r2);
+    bdd_delref(r3);
+    return ok;
+}
+
+static void test_differential() {
+    printf("\n== differential: random MTBDDs ==\n");
+    Fixture f = setup_custom(DV);
+    bdd_gbc_hook(NULL);
+    g_guard_fixture = &f;
+
+    DiffCheck c_apply{"apply (add and mul)"}, c_param{"apply_param"},
+        c_unary{"apply_unary"}, c_uparam{"apply_unary_param"},
+        c_guarded{"apply_guarded"}, c_gparam{"apply_guarded_param"},
+        c_ugarded{"apply_unary_guarded"}, c_op{"operation (controlled swap)"},
+        c_opg{"operation_guarded (controlled swap)"}, c_leaves{"leaf_count"};
+    DiffCheck *all[] = {&c_apply, &c_param, &c_unary, &c_uparam, &c_guarded,
+                        &c_gparam, &c_ugarded, &c_op, &c_opg, &c_leaves};
+
+    for (int it = 0; it < 120; ++it) {
+        Table tl = random_table(), tr = random_table();
+        BDD l = build_table(f, tl), r = build_table(f, tr);
+        Table sum(DN), prod(DN), neg(DN), sump(DN), scaled(DN);
+        size_t p = (size_t)mrand(5);
+        for (int a = 0; a < DN; ++a) {
+            sum[a] = tl[a] + tr[a];
+            prod[a] = tl[a] * tr[a];
+            neg[a] = -tl[a];
+            sump[a] = tl[a] + tr[a] + (int)p;
+            scaled[a] = tl[a] * (int)(p + 1);
+        }
+
+        diff_record(c_apply, stable_and_equal([&] { return mtbdd_apply(l, r, op_add); }, sum) &&
+                                 stable_and_equal([&] { return mtbdd_apply(l, r, op_mul); }, prod));
+        diff_record(c_param, stable_and_equal([&] { return mtbdd_apply_param(l, r, op_add_param, p); }, sump));
+        diff_record(c_unary, stable_and_equal([&] { return mtbdd_apply_unary(l, op_neg); }, neg));
+        diff_record(c_uparam, stable_and_equal([&] { return mtbdd_apply_unary_param(l, op_scale_param, p + 1); }, scaled));
+        diff_record(c_guarded, stable_and_equal([&] { return mtbdd_apply_guarded(l, r, guard_sum); }, sum));
+        diff_record(c_gparam, stable_and_equal([&] { return mtbdd_apply_guarded_param(l, r, guarded_sum_param, p); }, sump));
+        diff_record(c_ugarded, stable_and_equal([&] { return mtbdd_apply_unary_guarded(l, guarded_scale, p + 1); }, scaled));
+
+        /* Controlled swap: ascending controls, target below all of them. */
+        size_t target = (size_t)(1 + mrand(DV - 1));
+        std::vector<size_t> ctl;
+        for (size_t v = 0; v < target; ++v)
+            if (mrand(2) == 0)
+                ctl.push_back(v);
+        std::vector<size_t> controls = ctl;
+        controls.push_back(target);
+        Table cx(DN);
+        for (int a = 0; a < DN; ++a) {
+            bool all_set = true;
+            for (size_t c : ctl)
+                all_set = all_set && ((a >> c) & 1);
+            cx[a] = all_set ? tl[a ^ (1 << target)] : tl[a];
+        }
+        diff_record(c_op, stable_and_equal([&] {
+            return mtbdd_operation(l, controls.data(), ctl.size(), op_swap_at_target);
+        }, cx));
+        g_swap_target = target;
+        diff_record(c_opg, stable_and_equal([&] {
+            return mtbdd_operation_guarded(l, controls.data(), ctl.size(), guard_cx_swap);
+        }, cx));
+
+        std::vector<int> distinct;
+        BDD lr = bdd_addref(build_rec(f, tl, 0, 0, false));
+        for (int a = 0; a < DN; ++a) {
+            bool seen = false;
+            for (int d : distinct)
+                seen = seen || d == tl[a];
+            if (!seen)
+                distinct.push_back(tl[a]);
+        }
+        diff_record(c_leaves, mtbdd_leaf_count(lr) == distinct.size());
+        bdd_delref(lr);
+
+        bdd_delref(l);
+        bdd_delref(r);
+        if (it % 20 == 19)
+            bdd_gbc();
+    }
+
+    for (DiffCheck *c : all) {
+        char msg[128];
+        snprintf(msg, sizeof msg, "%s agrees with value tables on %d random cases", c->name, c->done);
+        EXPECT(c->bad == 0, msg);
+        if (c->bad)
+            printf("      (%d wrong)\n", c->bad);
+    }
+
+    g_guard_fixture = nullptr;
+    teardown();
+}
+
+/* Argument checks: invalid nodes, NULL operations, and use before init. */
+static int g_mtbdd_error = 0;
+static void record_mtbdd_error(int e) { g_mtbdd_error = e; }
+
+static void test_mtbdd_argument_checks() {
+    printf("\n== argument checks ==\n");
+    Fixture f = setup_custom(2);
+    bdd_error_hook(record_mtbdd_error);
+    BDD leaf = make_int_leaf(f, 1);
+    BDD node = bdd_makenode(0, leaf, make_int_leaf(f, 2));
+    size_t controls[] = {0};
+
+    EXPECT(mtbdd_apply(node, node, nullptr) == 0, "apply with a NULL operation returns false");
+    EXPECT(mtbdd_apply_param(node, node, nullptr, 1) == 0, "apply_param with a NULL operation returns false");
+    EXPECT(mtbdd_apply_unary(node, nullptr) == 0, "apply_unary with a NULL operation returns false");
+    EXPECT(mtbdd_apply_unary_param(node, nullptr, 1) == 0, "apply_unary_param with a NULL operation returns false");
+    EXPECT(mtbdd_apply_guarded(node, node, nullptr) == 0, "apply_guarded with a NULL operation returns false");
+    EXPECT(mtbdd_apply_guarded_param(node, node, nullptr, 1) == 0, "apply_guarded_param with a NULL operation returns false");
+    EXPECT(mtbdd_apply_unary_guarded(node, nullptr, 1) == 0, "apply_unary_guarded with a NULL operation returns false");
+    EXPECT(mtbdd_operation(node, controls, 0, nullptr) == 0, "operation with a NULL operation returns false");
+    EXPECT(mtbdd_operation_guarded(node, controls, 0, nullptr) == 0, "operation_guarded with a NULL operation returns false");
+
+    const BDD bad = 1 << 30;
+    EXPECT(mtbdd_apply(bad, node, op_add) == 0 && mtbdd_apply(node, bad, op_add) == 0,
+           "apply rejects an id beyond the table");
+    EXPECT(mtbdd_apply_param(bad, node, op_add_param, 1) == 0, "apply_param rejects an id beyond the table");
+    EXPECT(mtbdd_apply_unary(bad, op_neg) == 0, "apply_unary rejects an id beyond the table");
+    EXPECT(mtbdd_apply_unary_param(bad, op_scale_param, 1) == 0, "apply_unary_param rejects an id beyond the table");
+    EXPECT(mtbdd_ite(bad, node, node) == 0 && mtbdd_ite(node, bad, node) == 0 && mtbdd_ite(node, node, bad) == 0,
+           "ite rejects an id beyond the table");
+    EXPECT(mtbdd_operation(bad, controls, 0, op_swap_at_target) == 0, "operation rejects an id beyond the table");
+    g_mtbdd_error = 0;
+    mtbdd_apply(node, node, nullptr);
+    EXPECT(g_mtbdd_error == BDD_OP, "a NULL operation is reported as BDD_OP");
+    g_mtbdd_error = 0;
+    mtbdd_apply(bad, node, op_add);
+    EXPECT(g_mtbdd_error == BDD_ILLBDD, "an invalid node is reported as BDD_ILLBDD");
+    bdd_error_hook(bdd_default_errhandler);
+    teardown();
+}
+
+/* ------------------------------------------------------------------------=
+ * Differential tests of the C++ combinators
+ *
+ * Oracles on value tables (bit i of an index = value of level i):
+ *  - traverse_to(T, swap, pref, ITSELF) swaps level T on the paths it
+ *    visits; traverse_to(T, const K, pref, L or R) replaces the LOW or HIGH
+ *    child at level T by leaf K on those paths. Descent LR and RL visit
+ *    every path; L (R) visits the paths whose bits above T are all 0 (1).
+ *    L and R are checked on full trees, where no level is skipped.
+ *  - lockstep_to(T, exchange, LR/RL, ...) exchanges the whole subtrees
+ *    (ITSELF on both sides) or one chosen child of each side.
+ * ---------------------------------------------------------------------= */
+
+static BDD build_full(Fixture &f, const Table &t) {
+    /* Unreduced: every level present on every path. */
+    checkSameChildren = 0;
+    BDD r = bdd_addref(build_rec(f, t, 0, 0, false));
+    checkSameChildren = 1;
+    return r;
+}
+
+static bool path_visited(int a, int target, Branch pref) {
+    for (int v = 0; v < target; ++v) {
+        int b = (a >> v) & 1;
+        if (pref == Branch::L && b != 0) return false;
+        if (pref == Branch::R && b != 1) return false;
+    }
+    return true;
+}
+
+static void test_combinator_differential() {
+    printf("\n== differential: combinators ==\n");
+    Fixture f = setup_custom(DV);
+    bdd_gbc_hook(NULL);
+
+    const Branch prefs[] = {Branch::LR, Branch::RL, Branch::L, Branch::R};
+    const char *pref_names[] = {"LR", "RL", "L", "R"};
+    int bad_swap[4] = {0}, bad_child[4] = {0}, runs = 0;
+    int bad_lock = 0, bad_lock_child = 0, bad_make_swap = 0, lock_runs = 0;
+
+    for (int it = 0; it < 40; ++it) {
+        Table tl = random_table(), tr = random_table();
+        int target = mrand(DV);
+        int K = 7 + mrand(3);
+        BDD leafK = bdd_addref(make_int_leaf(f, K));
+        ++runs;
+
+        for (int pi = 0; pi < 4; ++pi) {
+            Branch pref = prefs[pi];
+            /* Reduced operands for LR/RL, full trees for L/R. */
+            BDD l = (pi < 2 && mrand(2)) ? build_table(f, tl) : build_full(f, tl);
+
+            Table exp_swap(DN), exp_lo(DN), exp_hi(DN);
+            for (int a = 0; a < DN; ++a) {
+                bool vis = path_visited(a, target, pref);
+                exp_swap[a] = vis ? tl[a ^ (1 << target)] : tl[a];
+                bool t1 = (a >> target) & 1;
+                exp_lo[a] = (vis && !t1) ? K : tl[a];
+                exp_hi[a] = (vis && t1) ? K : tl[a];
+            }
+
+            NodeOp sw = mtbdd_with_traverse_to(target, mtbdd_make_swap(), pref, Branch::ITSELF);
+            BDD r1 = bdd_addref(sw(l));
+            if (eval_all(r1) != exp_swap) ++bad_swap[pi];
+            /* Swapping twice restores the function. Only for LR/RL: with L
+             * or R descent on the reduced first result, the levels above its
+             * root are unconstrained, so another set of paths is visited. */
+            if (pi < 2) {
+                BDD r2 = bdd_addref(sw(r1));
+                if (eval_all(r2) != tl) ++bad_swap[pi];
+                bdd_delref(r2);
+            }
+            bdd_delref(r1);
+
+            NodeOp toK = [leafK](BDD) -> BDD { return leafK; };
+            BDD c1 = bdd_addref(mtbdd_with_traverse_to(target, toK, pref, Branch::L)(l));
+            BDD c2 = bdd_addref(mtbdd_with_traverse_to(target, toK, pref, Branch::R)(l));
+            if (eval_all(c1) != exp_lo || eval_all(c2) != exp_hi) ++bad_child[pi];
+            bdd_delref(c1);
+            bdd_delref(c2);
+            bdd_delref(l);
+        }
+
+        /* Lockstep with LR and RL descent on both sides. */
+        for (int pi = 0; pi < 2; ++pi) {
+            ++lock_runs;
+            Branch pref = prefs[pi];
+            BDD l = mrand(2) ? build_table(f, tl) : build_full(f, tl);
+            BDD r = mrand(2) ? build_table(f, tr) : build_full(f, tr);
+            BinaryNodeOp exchange = [](BDD x, BDD y) -> BDDPair { return BDDPair(y, x); };
+
+            BDDPair whole = mtbdd_with_lockstep_to(target, exchange, pref, Branch::ITSELF, pref, Branch::ITSELF)(l, r);
+            bdd_addref(whole.first);
+            bdd_addref(whole.second);
+            if (eval_all(whole.first) != tr || eval_all(whole.second) != tl) ++bad_lock;
+            bdd_delref(whole.first);
+            bdd_delref(whole.second);
+
+            const Branch sides[] = {Branch::L, Branch::R};
+            for (Branch sl : sides) {
+                for (Branch sr : sides) {
+                    int bl = sl == Branch::R, br = sr == Branch::R;
+                    Table el(DN), er(DN);
+                    for (int a = 0; a < DN; ++a) {
+                        int t = (a >> target) & 1;
+                        int base = a & ~(1 << target);
+                        el[a] = t == bl ? tr[base | (br << target)] : tl[a];
+                        er[a] = t == br ? tl[base | (bl << target)] : tr[a];
+                    }
+                    BDDPair ch = mtbdd_with_lockstep_to(target, exchange, pref, sl, pref, sr)(l, r);
+                    bdd_addref(ch.first);
+                    bdd_addref(ch.second);
+                    if (eval_all(ch.first) != el || eval_all(ch.second) != er) ++bad_lock_child;
+                    bdd_delref(ch.first);
+                    bdd_delref(ch.second);
+                }
+            }
+
+            /* mtbdd_make_swap(paramL, paramR) exchanging LOW children is the
+             * (L, L) case above, expressed through put_up/put_in. */
+            SwapParam lowside{mtbdd_get_side(Side::L), [](BDD node, BDD v) -> BDD {
+                                  return bdd_makenode(LEVEL(node), v, HIGH(node));
+                              }};
+            BDDPair ms = mtbdd_with_lockstep_to(target, mtbdd_make_swap(lowside, lowside), pref,
+                                                Branch::ITSELF, pref, Branch::ITSELF)(l, r);
+            bdd_addref(ms.first);
+            bdd_addref(ms.second);
+            Table el(DN), er(DN);
+            for (int a = 0; a < DN; ++a) {
+                bool t = (a >> target) & 1;
+                el[a] = t ? tl[a] : tr[a];
+                er[a] = t ? tr[a] : tl[a];
+            }
+            if (eval_all(ms.first) != el || eval_all(ms.second) != er) ++bad_make_swap;
+            bdd_delref(ms.first);
+            bdd_delref(ms.second);
+            bdd_delref(l);
+            bdd_delref(r);
+        }
+        bdd_delref(leafK);
+        bdd_gbc();
+    }
+
+    for (int pi = 0; pi < 4; ++pi) {
+        char msg[128];
+        snprintf(msg, sizeof msg, "traverse_to with descent %s swaps the target level (%d cases)", pref_names[pi], runs);
+        EXPECT(bad_swap[pi] == 0, msg);
+        snprintf(msg, sizeof msg, "traverse_to with descent %s rewrites the LOW and HIGH child (%d cases)", pref_names[pi], runs);
+        EXPECT(bad_child[pi] == 0, msg);
+    }
+    char msg[128];
+    snprintf(msg, sizeof msg, "lockstep_to exchanges whole subtrees (%d cases)", lock_runs);
+    EXPECT(bad_lock == 0, msg);
+    snprintf(msg, sizeof msg, "lockstep_to exchanges the chosen children (%d cases)", lock_runs * 4);
+    EXPECT(bad_lock_child == 0, msg);
+    snprintf(msg, sizeof msg, "make_swap(paramL, paramR) exchanges LOW children (%d cases)", lock_runs);
+    EXPECT(bad_make_swap == 0, msg);
+    teardown();
+}
+
 int main() {
     printf("MoToBuddy MTBDD test suite\n");
 
@@ -724,6 +1136,9 @@ int main() {
     test_cube2();
     test_reinit();
     test_guarded_variants();
+    test_differential();
+    test_mtbdd_argument_checks();
+    test_combinator_differential();
 
     printf("\n----------------------------------------\n");
     printf("passed=%d failed=%d xfailed=%d\n", g_passed, g_failed, g_xfailed);
