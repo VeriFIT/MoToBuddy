@@ -26,4 +26,4 @@ clean:
 #  Examples
 # ============================================================================ #
 test:
-	@cd build/examples/ && ./runregression
+	@examples/check.sh -b build

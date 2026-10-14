@@ -1,0 +1,104 @@
+name: tests
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A new push to a PR supersedes the previous run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The library and every example, across the build types and the statistics
+  # switch. BUDDY_STATS=ON compiles the CACHESTATS/SWAPCOUNT paths that the
+  # default build preprocesses away, so without it they would never even be
+  # compiled.
+  examples:
+    name: Examples (${{ matrix.build_type }}, stats ${{ matrix.stats }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [Release, Debug]
+        stats: ["OFF", "ON"]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # tcsh is what the per-example runtest scripts are written in; cmake and
+      # g++ are preinstalled on the runner, but naming them keeps the job
+      # honest if that changes.
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake g++ tcsh
+
+      - name: Show toolchain
+        run: |
+          gcc --version | head -1
+          g++ --version | head -1
+          cmake --version | head -1
+
+      # Configures into build/ and builds libbuddy plus all examples. The
+      # first configure downloads nlohmann/json.
+      - name: Build library and examples
+        run: make build BUILD_TYPE=${{ matrix.build_type }} STATS=${{ matrix.stats }}
+
+      # The suites that exercise this fork's own additions. These are the
+      # ones worth making a required status check.
+      - name: MTBDD and quantum gate suites
+        run: examples/check.sh mtbddtest quantum_gates
+
+      # The plain-BDD suites inherited from BuDDy. All of them currently fail
+      # on main: with dynamic reordering enabled, apply_rec recurses without
+      # bound and the kernel aborts with "bddrefstack overflow" (bddcalc), or
+      # the programs die part-way and leave truncated output (adder, queen,
+      # money, ...). Until that is fixed this step is informational: it runs
+      # and shows the diffs, but a failure does not redden the job. Drop
+      # continue-on-error once the suites pass.
+      - name: Plain BDD suites (known failing on main)
+        continue-on-error: true
+        run: examples/check.sh adder bddcalc bddtest cmilner fdd milner money queen
+
+  # MEDUSA is the main consumer of this library. Its Makefile clones
+  # MoToBuddy at a pinned commit; here that pin is overridden with the commit
+  # under test, so an API or behaviour change that breaks the downstream
+  # simulator shows up on the pull request that introduces it rather than
+  # when MEDUSA next bumps its pin.
+  medusa:
+    name: MEDUSA (downstream) against this commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          repository: QuantumFIT/MEDUSA
+          ref: devel
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+              libgmp-dev cmake g++ python3
+
+      # For a pull request the merge commit is synthetic and not fetchable, so
+      # the head commit is used, taken from the head repository so that PRs
+      # from forks work too.
+      - name: Build MEDUSA against this MoToBuddy commit
+        run: |
+          make init \
+            MOTOBUDDY_REPO="${{ github.event.pull_request.head.repo.clone_url || format('{0}/{1}.git', github.server_url, github.repository) }}" \
+            MOTOBUDDY_COMMIT="${{ github.event.pull_request.head.sha || github.sha }}"
+          git -C lib/MoToBuddy log --oneline -1
+
+      - name: Run the MEDUSA test suite
+        run: make test

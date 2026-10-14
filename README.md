@@ -1,5 +1,7 @@
 # MoToBuDDy
 
+[![tests](https://github.com/VeriFIT/MoToBuddy/actions/workflows/tests.yml/badge.svg)](https://github.com/VeriFIT/MoToBuddy/actions/workflows/tests.yml)
+
 A fork of the [BuDDy BDD library](https://github.com/SSoelvsten/buddy) extended with full Multi-Terminal BDD (MTBDD) support, a JSON-based gate serialization format (MOSF), and quantum gate simulation examples.
 
 ---
@@ -25,6 +27,10 @@ make
 ```
 
 The build system fetches [nlohmann/json](https://github.com/nlohmann/json) automatically on first configure. No manual header installation is required.
+
+### Testing
+
+Each example directory carries a `runtest` script and (mostly) an `expected` output. `make build` followed by `make test` runs them all through `examples/check.sh`, which prints PASSED/FAILED per example and exits non-zero on any failure. Individual examples can be selected by name, e.g. `examples/check.sh mtbddtest quantum_gates`. The same script is what CI runs.
 
 ---
 
