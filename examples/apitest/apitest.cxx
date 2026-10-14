@@ -10,6 +10,8 @@
  * all assignments and evaluates the BDD as an oracle.
  */
 
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -910,6 +912,214 @@ static void test_cpp() {
 }
 
 /* ------------------------------------------------------------------------=
+ * Loading: node order, missing counts, growth of the load hash table
+ * ---------------------------------------------------------------------= */
+
+static std::vector<std::string> file_lines(const char *path) {
+    std::vector<std::string> v;
+    std::string all = slurp_path(path), cur;
+    for (char ch : all) {
+        if (ch == '\n') {
+            v.push_back(cur);
+            cur.clear();
+        } else
+            cur += ch;
+    }
+    if (!cur.empty())
+        v.push_back(cur);
+    return v;
+}
+
+static void write_lines(const char *path, const std::vector<std::string> &v) {
+    FILE *f = fopen(path, "w");
+    for (auto &l : v)
+        fprintf(f, "%s\n", l.c_str());
+    fclose(f);
+}
+
+static void test_load_variants() {
+    printf("\n== loading ==\n");
+    bdd_init(100000, 10000);
+    bdd_gbc_hook(NULL);
+    bdd_error_hook(record_error);
+    bdd_setvarnum(16);
+    bvec x = bvec_var(8, 0, 1), y = bvec_var(8, 8, 1);
+    /* About 500 nodes: more than the loader's initial hash table holds
+     * once it has to guess the size. */
+    bdd big = bvec_coerce(8, x * y) == bvec_con(8, 77);
+    EXPECT(bdd_nodecount(big) > 400, "test BDD is larger than the load table's initial guess");
+
+    char path[] = "apitest_load.bdd";
+    bdd_fnsave(path, big, "big", "BDD");
+    std::vector<std::string> saved = file_lines(path);
+    size_t body = 0;
+    for (size_t i = 0; i < saved.size(); ++i)
+        if (saved[i].rfind("%Ordering", 0) == 0)
+            body = i + 1;
+
+    auto load_ok = [&](const std::vector<std::string> &v) {
+        write_lines(path, v);
+        bdd r;
+        g_last_error = 0;
+        bdd_fnload(path, r);
+        return g_last_error == 0 && r == big;
+    };
+
+    EXPECT(load_ok(saved), "round trip of a large BDD");
+    std::vector<std::string> rev = saved;
+    std::reverse(rev.begin() + body, rev.end());
+    EXPECT(load_ok(rev), "nodes listed parents first are resolved");
+    bool shuffles = true;
+    unsigned long st = 7;
+    for (int k = 0; k < 5; ++k) {
+        std::vector<std::string> sh = saved;
+        for (size_t i = sh.size() - 1; i > body; --i) {
+            st = st * 6364136223846793005UL + 1442695040888963407UL;
+            size_t j = body + (size_t)((st >> 33) % (i - body + 1));
+            std::swap(sh[i], sh[j]);
+        }
+        shuffles = shuffles && load_ok(sh);
+    }
+    EXPECT(shuffles, "nodes in shuffled order are resolved to the declared root");
+    std::vector<std::string> nocount;
+    for (auto &l : saved)
+        if (l.rfind("%Nodes", 0) != 0)
+            nocount.push_back(l);
+    EXPECT(load_ok(nocount), "a file without %Nodes grows the load table");
+    std::vector<std::string> undercount = saved;
+    for (auto &l : undercount)
+        if (l.rfind("%Nodes", 0) == 0)
+            l = "%Nodes 3";
+    EXPECT(load_ok(undercount), "a file with too small a %Nodes grows the load table");
+    std::vector<std::string> comments = saved;
+    comments.insert(comments.begin() + body, "# a comment between nodes");
+    EXPECT(load_ok(comments), "comment lines are skipped");
+    EXPECT(load_ok(saved) && load_ok(nocount), "consecutive loads do not share state");
+
+    std::vector<std::string> dangling = saved;
+    dangling.push_back("99999[3] 99998 1");
+    write_lines(path, dangling);
+    bdd r;
+    g_last_error = 0;
+    bdd_fnload(path, r);
+    EXPECT(g_last_error == BDD_FORMAT, "a reference to an undefined node is BDD_FORMAT");
+    std::vector<std::string> garbage = saved;
+    garbage.push_back("not a node line");
+    write_lines(path, garbage);
+    g_last_error = 0;
+    bdd_fnload(path, r);
+    EXPECT(g_last_error == BDD_FORMAT, "a malformed node line is BDD_FORMAT");
+    std::vector<std::string> badkey = saved;
+    for (auto &l : badkey)
+        if (l.rfind("%Name", 0) == 0)
+            l = "%Bogus header";
+    write_lines(path, badkey);
+    g_last_error = 0;
+    bdd_fnload(path, r);
+    EXPECT(g_last_error == BDD_FORMAT, "an unknown header line is BDD_FORMAT");
+    std::vector<std::string> other = saved;
+    other[0] = "@SOMETHINGELSE";
+    EXPECT(load_ok(other), "an unknown type tag still loads");
+    remove(path);
+    bdd_done();
+}
+
+/* ------------------------------------------------------------------------=
+ * Nested variable blocks, order printing, growing the variable count
+ * ---------------------------------------------------------------------= */
+
+static void test_blocks_and_growth() {
+    printf("\n== nested blocks and growth ==\n");
+    bdd_init(10000, 1000);
+    bdd_gbc_hook(NULL);
+    bdd_error_hook(record_error);
+    bdd_reorder_verbose(0);
+    bdd_setvarnum(12);
+
+    bdd f = bddfalse;
+    for (int i = 0; i < 6; ++i)
+        f |= bdd_ithvar(i) & bdd_ithvar(i + 6);
+    double count = bdd_satcount(f);
+
+    /* Inner blocks first, then the enclosing ones, then blocks that go
+     * before and after existing ones. */
+    EXPECT(bdd_intaddvarblock(2, 3, BDD_REORDER_FREE) >= 0, "inner block 2..3");
+    EXPECT(bdd_intaddvarblock(0, 5, BDD_REORDER_FREE) >= 0, "enclosing block 0..5 around 2..3");
+    EXPECT(bdd_intaddvarblock(0, 1, BDD_REORDER_FIXED) >= 0, "inner block 0..1 inside 0..5");
+    EXPECT(bdd_intaddvarblock(4, 5, BDD_REORDER_FREE) >= 0, "inner block 4..5 after 2..3");
+    EXPECT(bdd_intaddvarblock(8, 11, BDD_REORDER_FREE) >= 0, "block 8..11 after 0..5");
+    EXPECT(bdd_intaddvarblock(6, 7, BDD_REORDER_FREE) >= 0, "block 6..7 between existing blocks");
+    EXPECT(bdd_intaddvarblock(0, 5, BDD_REORDER_FREE) >= 0, "re-adding an existing block");
+    EXPECT(bdd_intaddvarblock(6, 11, BDD_REORDER_FREE) >= 0, "enclosing block 6..11 around two blocks");
+    g_last_error = 0;
+    bdd_intaddvarblock(5, 7, BDD_REORDER_FREE);
+    EXPECT(g_last_error == BDD_VARBLK, "a block straddling two blocks is BDD_VARBLK");
+
+    FILE *tmp = tmpfile();
+    bdd_fprintorder(tmp);
+    std::string order = slurp(tmp);
+    fclose(tmp);
+    EXPECT(contains(order, "{") || order.size() > 20, "fprintorder prints the nested blocks");
+    printf("printorder:\n");
+    bdd_printorder();
+
+    bdd_reorder(BDD_REORDER_SIFT);
+    EXPECT(bdd_satcount(f) == count, "sifting with nested blocks preserves f");
+    bdd_reorder(BDD_REORDER_WIN2ITE);
+    EXPECT(bdd_satcount(f) == count, "window permutation with nested blocks preserves f");
+    bool fixed_kept = bdd_var2level(1) == bdd_var2level(0) + 1;
+    EXPECT(fixed_kept, "a FIXED block keeps its internal order");
+
+    /* Growing the variable count while nodes and blocks exist. */
+    int before = bdd_varnum();
+    bdd_extvarnum(20);
+    EXPECT(bdd_varnum() == before + 20, "extvarnum with live nodes and blocks");
+    EXPECT(bdd_satcount(f) == count * (double)(1 << 20), "f is unchanged by new variables");
+    bdd g = f & bdd_ithvar(25);
+    EXPECT(bdd_satcount(g) == count * (double)(1 << 19), "new variables are usable");
+    bdd_setvarnum(bdd_varnum() + 200);
+    EXPECT(bdd_varnum() == before + 220, "setvarnum grows the variable arrays a second time");
+    EXPECT(bdd_satcount(f & bdd_nithvar(231)) == bdd_satcount(f) / 2, "the last new variable is usable");
+    EXPECT(bdd_satcount(f) == count * std::ldexp(1.0, 220), "satcount follows the variable count");
+    bdd_done();
+}
+
+/* ------------------------------------------------------------------------=
+ * C entry points shadowed by C++ overloads, and pair bookkeeping
+ * ---------------------------------------------------------------------= */
+
+static void test_c_entry_points() {
+    printf("\n== C entry points ==\n");
+    bdd_init(1000, 100);
+    bdd_gbc_hook(NULL);
+    bdd_error_hook(record_error);
+    bdd_setvarnum(4);
+    bdd a = bdd_ithvar(0), b = bdd_ithvar(1), c = bdd_ithvar(2), d = bdd_ithvar(3);
+
+    bddPair *p1 = bdd_newpair(), *p2 = bdd_newpair(), *p3 = bdd_newpair();
+    int vars[2] = {0, 1};
+    BDD subst[2] = {(c | d).id(), (c & d).id()};
+    EXPECT(bdd_setbddpairs(p2, vars, subst, 2) == 0, "C bdd_setbddpairs");
+    EXPECT(bdd_veccompose(a & b, p2) == ((c | d) & (c & d)), "C bdd_setbddpairs substitutes both");
+    g_last_error = 0;
+    int badvars[1] = {99};
+    bdd_setbddpairs(p2, badvars, subst, 1);
+    EXPECT(g_last_error == BDD_VAR, "C bdd_setbddpairs with a bad variable is BDD_VAR");
+    /* Free the middle, then the first, then the last of three pairs. */
+    bdd_freepair(p2);
+    bdd_freepair(p1);
+    bdd_freepair(p3);
+    EXPECT(true, "freeing pairs from the middle, front and back of the list");
+    bddPair *p4 = bdd_newpair();
+    bdd_setpair(p4, 0, 3);
+    EXPECT(bdd_replace(a, p4) == d, "pairs still work after freeing others");
+    bdd_freepair(p4);
+    bdd_freepair(NULL);
+    EXPECT(true, "freeing NULL is a no-op");
+    bdd_done();
+}
+
+/* ------------------------------------------------------------------------=
  * Main
  * ---------------------------------------------------------------------= */
 
@@ -923,6 +1133,9 @@ int main() {
     test_bvec();
     test_io();
     test_cpp();
+    test_load_variants();
+    test_blocks_and_growth();
+    test_c_entry_points();
 
     printf("\nSummary: %d passed, %d failed\n", g_passed, g_failed);
     return g_failed == 0 ? 0 : 1;

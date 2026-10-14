@@ -289,4 +289,57 @@ PASS: copy constructor
 PASS: default constructed bdd is false
 PASS: node accessors
 
-Summary: 270 passed, 0 failed
+== loading ==
+PASS: test BDD is larger than the load table's initial guess
+PASS: round trip of a large BDD
+PASS: nodes listed parents first are resolved
+PASS: nodes in shuffled order are resolved to the declared root
+PASS: a file without %Nodes grows the load table
+PASS: a file with too small a %Nodes grows the load table
+PASS: comment lines are skipped
+PASS: consecutive loads do not share state
+PASS: a reference to an undefined node is BDD_FORMAT
+PASS: a malformed node line is BDD_FORMAT
+PASS: an unknown header line is BDD_FORMAT
+PASS: an unknown type tag still loads
+
+== nested blocks and growth ==
+PASS: inner block 2..3
+PASS: enclosing block 0..5 around 2..3
+PASS: inner block 0..1 inside 0..5
+PASS: inner block 4..5 after 2..3
+PASS: block 8..11 after 0..5
+PASS: block 6..7 between existing blocks
+PASS: re-adding an existing block
+PASS: enclosing block 6..11 around two blocks
+PASS: a block straddling two blocks is BDD_VARBLK
+PASS: fprintorder prints the nested blocks
+printorder:
+  1{
+     2
+     0
+     3
+  1}
+  7{
+     5
+     4
+  7}
+PASS: sifting with nested blocks preserves f
+PASS: window permutation with nested blocks preserves f
+PASS: a FIXED block keeps its internal order
+PASS: extvarnum with live nodes and blocks
+PASS: f is unchanged by new variables
+PASS: new variables are usable
+PASS: setvarnum grows the variable arrays a second time
+PASS: the last new variable is usable
+PASS: satcount follows the variable count
+
+== C entry points ==
+PASS: C bdd_setbddpairs
+PASS: C bdd_setbddpairs substitutes both
+PASS: C bdd_setbddpairs with a bad variable is BDD_VAR
+PASS: freeing pairs from the middle, front and back of the list
+PASS: pairs still work after freeing others
+PASS: freeing NULL is a no-op
+
+Summary: 307 passed, 0 failed
