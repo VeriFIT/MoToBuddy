@@ -40,6 +40,46 @@ static void mtbdd_release_temp_value(void *value, mtbdd_terminal_type type)
    free(value);
 }
 
+/* Turns the value an apply callback returned at a leaf into a terminal.
+ * Takes ownership of value. In the CUSTOM domain, a result equal to an
+ * operand's value reuses that operand (r < 0 for unary operations) and sets
+ * *reused, so the caller returns it without caching, as before: downstream
+ * code (MEDUSA's allocation counters) relies on the callback running again
+ * for such results. In the other domains the value is copied into the
+ * terminal, so the buffer is freed; there are no compare functions. */
+static BDD mtbdd_leaf_result(void *value, mtbdd_terminal_type type,
+                             BDD l, void *valueL, BDD r, void *valueR,
+                             int *reused)
+{
+   *reused = 0;
+   if (value == NULL)
+      return bddfalse;
+   if (domaintype != CUSTOM) {
+      BDD t = mtbdd_maketerminal(value, type);
+      free(value);
+      return t;
+   }
+   mtbdd_terminal_compare_function_t cmp =
+      type < (unsigned)mtbdd_terminal_type_number ? CUSTOMCOMPARE(type) : NULL;
+   if (cmp == NULL) {
+      printf("Missing custom compare for type %d.\n", type);
+      bdd_error(BDD_OP);
+      mtbdd_release_temp_value(value, type);
+      return bddfalse;
+   }
+   if (cmp(value, valueL)) {
+      mtbdd_release_temp_value(value, type);
+      *reused = 1;
+      return l;
+   }
+   if (r >= 0 && cmp(value, valueR)) {
+      mtbdd_release_temp_value(value, type);
+      *reused = 1;
+      return r;
+   }
+   return mtbdd_maketerminal(value, type);
+}
+
 int mtbdd_init(int initnodesize, int cs) {
    mtbdd = 1;
    return bdd_init(initnodesize, cs);
@@ -82,6 +122,12 @@ int mtbdd_maketerminal(void *value, mtbdd_terminal_type type) {
             /* Must use the slot from insertvalue — IndexStack may recycle holes,
              * so mtbddTerminalUsed-1 is not the assigned index after GC. */
             HIGHp(node) = valIndex;
+            /* The low half only chose the hash bucket. It shares storage with
+             * LOW, and LOW == -1 marks a free node, so a value whose low 32
+             * bits are all ones (e.g. -1) looked like a freed node to
+             * bdd_addref, the CHECK macros and garbage collection. Lookups
+             * and rehashing use the value itself, not this field. */
+            TERMINALTYPEp(node) = type;
          }
 
          return foundTerminal;
@@ -99,6 +145,7 @@ int mtbdd_maketerminal(void *value, mtbdd_terminal_type type) {
             foundTerminal = bdd_makenode(MAXLEVEL, lowDouble, highDouble); // create new node
             node = &bddnodes[foundTerminal];
             HIGHp(node) = valIndex;
+            TERMINALTYPEp(node) = type;   /* see LONGVAL above */
          }
          
          return foundTerminal;
@@ -438,28 +485,15 @@ BDD mtbdd_apply_rec(BDD l, BDD r, void*(*op)(void*, void*)) {
         if (ISCONST(l)) decidingTerminalType = terminalTypeR;
         else decidingTerminalType = terminalTypeL;
 
-        if (!ISCONST(l) && !ISCONST(r) && terminalTypeL != terminalTypeR) {
+        if (domaintype == CUSTOM && !ISCONST(l) && !ISCONST(r) && terminalTypeL != terminalTypeR) {
          printf("Mismatch of terminal types in APPLY. %d-%d %d-%d\n", l, terminalTypeL, r, terminalTypeR); // TODO CUSTOM ERROR
         }
         void *resultValue = op(terminalValueL,terminalValueR );
-        if (resultValue == NULL) {return bdd_false();}
-        mtbdd_terminal_compare_function_t cmp = CUSTOMCOMPARE(decidingTerminalType);
-        if (cmp == NULL) {
-         printf("Missing custom compare for type %d.\n", decidingTerminalType);
-         bdd_error(BDD_OP);
-        }
-        if (cmp(resultValue, terminalValueL)) {
-            mtbdd_release_temp_value(resultValue, decidingTerminalType);
-            return l;
-        }
-        if(cmp(resultValue, terminalValueR)) {
-            mtbdd_release_temp_value(resultValue, decidingTerminalType);
-          return r;
-        }
-        res = (mtbdd_maketerminal(resultValue, decidingTerminalType));
-        if(!DOMAIN_NOT_SHORT){ // value will be directly in the node
-            free(resultValue); // we don't need the allocated one
-        }
+        int reused;
+        res = mtbdd_leaf_result(resultValue, decidingTerminalType,
+                                l, terminalValueL, r, terminalValueR, &reused);
+        if (reused)
+            return res;
     }
     else{
       if(LEVEL(l) == LEVEL(r)){
@@ -531,28 +565,15 @@ BDD mtbdd_apply_param_rec(BDD l, BDD r, void*(*op)(void*, void*, size_t), size_t
         if (ISCONST(l)) decidingTerminalType = terminalTypeR;
         else decidingTerminalType = terminalTypeL;
 
-        if (!ISCONST(l) && !ISCONST(r) && terminalTypeL != terminalTypeR) {
+        if (domaintype == CUSTOM && !ISCONST(l) && !ISCONST(r) && terminalTypeL != terminalTypeR) {
          printf("Mismatch of terminal types in APPLY. %d-%d %d-%d\n", l, terminalTypeL, r, terminalTypeR);
         }
         void *resultValue = op(terminalValueL,terminalValueR, param);
-        if (resultValue == NULL) {return bdd_false();}
-        mtbdd_terminal_compare_function_t cmp = CUSTOMCOMPARE(decidingTerminalType);
-        if (cmp == NULL) {
-         printf("Missing custom compare for type %d.\n", decidingTerminalType);
-         bdd_error(BDD_OP);
-        }
-        if (cmp(resultValue, terminalValueL)) {
-            mtbdd_release_temp_value(resultValue, decidingTerminalType);
-            return l;
-        }
-        if(cmp(resultValue, terminalValueR)) {
-            mtbdd_release_temp_value(resultValue, decidingTerminalType);
-          return r;
-        }
-        res = (mtbdd_maketerminal(resultValue, decidingTerminalType));
-        if(!DOMAIN_NOT_SHORT){ // value will be directly in the node
-            free(resultValue); // we don't need the allocated one
-        }
+        int reused;
+        res = mtbdd_leaf_result(resultValue, decidingTerminalType,
+                                l, terminalValueL, r, terminalValueR, &reused);
+        if (reused)
+            return res;
     }
     else{
       if(LEVEL(l) == LEVEL(r)){
@@ -736,19 +757,11 @@ BDD mtbdd_apply_unary_rec(BDD l, void*(*op)(void*)) {
         void *terminalValue = mtbdd_getTerminalValue(l);
         mtbdd_terminal_type terminalType = mtbdd_get_terminal_type(l);
         void *resultValue = op(terminalValue);
-        mtbdd_terminal_compare_function_t cmp = CUSTOMCOMPARE(terminalType);
-        if (cmp == NULL) {
-         printf("Custom compare missing for type %d.\n", terminalType);
-         bdd_error(BDD_OP);
-        }
-        if (cmp(resultValue, terminalValue)) {
-            mtbdd_release_temp_value(resultValue, terminalType);
-            return l;
-        }
-        res = (mtbdd_maketerminal(resultValue, terminalType));
-        if (!DOMAIN_NOT_SHORT) {
-            free(resultValue);
-        }
+        int reused;
+        res = mtbdd_leaf_result(resultValue, terminalType,
+                                l, terminalValue, -1, NULL, &reused);
+        if (reused)
+            return res;
     } else {
         PUSHREF(mtbdd_apply_unary_rec(LOW(l), op));
         PUSHREF(mtbdd_apply_unary_rec(HIGH(l), op));
@@ -789,19 +802,11 @@ BDD mtbdd_apply_unary_param_rec(BDD l, void*(*op)(void*, size_t), size_t param) 
         void *terminalValue = mtbdd_getTerminalValue(l);
         mtbdd_terminal_type terminalType = mtbdd_get_terminal_type(l);
         void *resultValue = op(terminalValue, param);
-        mtbdd_terminal_compare_function_t cmp = CUSTOMCOMPARE(terminalType);
-        if (cmp == NULL) {
-         printf("Custom compare missing for type %d.\n", terminalType);
-         bdd_error(BDD_OP);
-        }
-        if (cmp(resultValue, terminalValue)) {
-            mtbdd_release_temp_value(resultValue, terminalType);
-            return l;
-        }
-        res = (mtbdd_maketerminal(resultValue, terminalType));
-        if (!DOMAIN_NOT_SHORT) {
-            free(resultValue);
-        }
+        int reused;
+        res = mtbdd_leaf_result(resultValue, terminalType,
+                                l, terminalValue, -1, NULL, &reused);
+        if (reused)
+            return res;
     } else {
         PUSHREF(mtbdd_apply_unary_param_rec(LOW(l), op, param));
         PUSHREF(mtbdd_apply_unary_param_rec(HIGH(l), op, param));
