@@ -48,7 +48,13 @@ NodeOp mtbdd_with_traverse_to(int target_level,
 
             if ((int)LEVEL(node) > target_level || ISCONST(node)) {
                 checkSameChildren = 0;
-                if (pref == Branch::LR || pref == Branch::RL) {
+                /* With L or R descent the virtual node fills the next
+                   skipped level, but never one past the target: when the
+                   starting node already lies below the target, parent_level
+                   + 1 is below it too and the descent would create ever
+                   deeper virtual nodes without reaching the target. */
+                if (pref == Branch::LR || pref == Branch::RL ||
+                    parent_level + 1 > target_level) {
                     working_node = bdd_makenode(target_level, node, node);
                 } else {
                     working_node = bdd_makenode(parent_level + 1, node, node);
@@ -151,7 +157,9 @@ BinaryNodeOp mtbdd_with_lockstep_to(int target_level,
         auto virt_node = [&](BDD node, int parent_lv, Branch pref) -> BDD {
             if (!ISCONST(node) && (int)LEVEL(node) <= target_level)
                 return node;
-            int virt_lv = (pref == Branch::LR || pref == Branch::RL)
+            /* Never past the target (see mtbdd_with_traverse_to). */
+            int virt_lv = (pref == Branch::LR || pref == Branch::RL ||
+                           parent_lv + 1 > target_level)
                           ? target_level
                           : parent_lv + 1;
             checkSameChildren = 0;
