@@ -2,13 +2,15 @@
 """Benchmark MoToBuddy variants on MEDUSA circuits and BuDDy examples.
 
 usage: bench/bench.py --medusa DIR [-r REPS] [--only PATTERN] [--cpu N]
-                      name=commit [name=commit ...]
+                      name=commit[@MEDUSA_DIR] [name=commit[@MEDUSA_DIR] ...]
 
   --medusa DIR   a MEDUSA checkout (https://github.com/QuantumFIT/MEDUSA);
                  its benchmarks/ provide the circuits
   --work DIR     where variants are built (default: bench-work/ next to
                  the repository)
   --cpu N        core to pin runs to with taskset (default 3)
+  name=commit@DIR  builds that variant's MEDUSA from DIR instead of --medusa,
+                 to measure a MEDUSA-side change against the same library
 
 Example: compare main with the current branch, 7 repetitions
   bench/bench.py --medusa ../MEDUSA -r 7 base=main new=HEAD
@@ -50,10 +52,14 @@ def sh(cmd, cwd=None):
 
 
 def build(name, commit):
+    medusa_src = MEDUSA_SRC
+    if "@" in commit:
+        commit, medusa_src = commit.split("@", 1)
+        medusa_src = os.path.abspath(medusa_src)
     sha = sh(f"git -C {REPO} rev-parse {commit}").strip()
     d = os.path.join(VDIR, name)
     stamp = os.path.join(d, "sha")
-    sha_tag = sha
+    sha_tag = sha + "@" + medusa_src
     if os.path.exists(stamp) and open(stamp).read() == sha_tag:
         return d
     if os.path.exists(d):
@@ -63,7 +69,7 @@ def build(name, commit):
     sh(f"git -C {REPO} worktree add --detach {d}/mtb {sha}")
     os.makedirs(f"{d}/mtb/build")
     sh("cmake .. -DCMAKE_BUILD_TYPE=Release && make -j4 bddcalc queen cmilner milner", cwd=f"{d}/mtb/build")
-    sh(f"rsync -a --exclude lib --exclude obj --exclude 'MEDUSA_*' --exclude 'test_*' --exclude .git {MEDUSA_SRC}/ {d}/medusa/")
+    sh(f"rsync -a --exclude lib --exclude obj --exclude 'MEDUSA_*' --exclude 'test_*' --exclude .git {medusa_src}/ {d}/medusa/")
     sh(f"make init MOTOBUDDY_REPO=file://{REPO} MOTOBUDDY_COMMIT={sha}", cwd=f"{d}/medusa")
     sh("make -j4 buddy_doubles_f128", cwd=f"{d}/medusa")
     os.makedirs(f"{d}/run", exist_ok=True)
