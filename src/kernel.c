@@ -345,6 +345,11 @@ int bdd_setvarnum(int num)
    int bdv;
    int oldbddvarnum = bddvarnum;
 
+      /* The node table does not exist yet; building the variable nodes
+         would divide by its zero size. */
+   if (!bddrunning)
+      return bdd_error(BDD_RUNNING);
+
    bdd_disable_reorder();
       
    if (num < 1  ||  num >= MAXVAR)

@@ -65,6 +65,10 @@ void mtbdd_owned_cache_flush(void);
 #define CACHEID_APPAL        0x4
 #define CACHEID_APPUN        0x5
 
+   /* appex, appall and appuni share appexcache, so each tags its entries
+      with its own value in the low two bits of appexid. appall and appuni
+      used to share the tag 1 and returned each other's cached results. */
+
 
    /* Number of boolean operators */
 #define OPERATOR_NUM    11
@@ -103,6 +107,7 @@ static int supportID;               /* Current ID (true value) for support */
 static int supportMin;              /* Min. used level in support calc. */
 static int supportMax;              /* Max. used level in support calc. */
 static int* supportSet;             /* The found support set */
+static int  supportSize;            /* Allocated length of supportSet */
 static BddCache applycache;         /* Cache for apply results */
 static BddCache itecache;           /* Cache for ITE results */
 static BddCache quantcache;         /* Cache for exist/forall results */
@@ -213,6 +218,7 @@ int bdd_operator_init(int cachesize)
    quantvarset = NULL;
    cacheratio = 0;
    supportSet = NULL;
+   supportSize = 0;
    
    return 0;
 }
@@ -247,6 +253,10 @@ void bdd_operator_done(void)
 
    if (supportSet != NULL)
      free(supportSet);
+   /* Reset both, so a later bdd_init/bdd_support pair reallocates the set
+      instead of writing through a freed (or NULL) pointer. */
+   supportSet = NULL;
+   supportSize = 0;
 }
 
 
@@ -1852,7 +1862,7 @@ BDD bdd_appex(BDD l, BDD r, int opr, BDD var)
       INITREF;
       applyop = bddop_or;
       appexop = opr;
-      appexid = (var << 5) | (appexop << 1); /* FIXME: range! */
+      appexid = (var << 6) | (appexop << 2) | 0; /* appex; FIXME: range! */
       quantid = (appexid << 3) | CACHEID_APPEX;
       
       if (!firstReorder)
@@ -1918,7 +1928,7 @@ BDD bdd_appall(BDD l, BDD r, int opr, BDD var)
       INITREF;
       applyop = bddop_and;
       appexop = opr;
-      appexid = (var << 5) | (appexop << 1) | 1; /* FIXME: range! */
+      appexid = (var << 6) | (appexop << 2) | 1; /* appall; FIXME: range! */
       quantid = (appexid << 3) | CACHEID_APPAL;
       
       if (!firstReorder)
@@ -1984,7 +1994,7 @@ BDD bdd_appuni(BDD l, BDD r, int opr, BDD var)
       INITREF;
       applyop = bddop_xor;
       appexop = opr;
-      appexid = (var << 5) | (appexop << 1) | 1; /* FIXME: range! */
+      appexid = (var << 6) | (appexop << 2) | 2; /* appuni; FIXME: range! */
       quantid = (appexid << 3) | CACHEID_APPUN;
       
       if (!firstReorder)
@@ -2134,7 +2144,6 @@ RETURN  {* A BDD variable set. *}
 */
 BDD bdd_support(BDD r)
 {
-   static int  supportSize = 0;
    int n;
    int res=1;
 
@@ -2146,6 +2155,7 @@ BDD bdd_support(BDD r)
       /* On-demand allocation of support set */
    if (supportSize < bddvarnum)
    {
+     free(supportSet);
      if ((supportSet=(int*)malloc(bddvarnum*sizeof(int))) == NULL)
      {
        bdd_error(BDD_MEMORY);
