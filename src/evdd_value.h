@@ -63,7 +63,8 @@ typedef evddNormResult (*evdd_value_normalize_function_t)(evdd_value_id w_low,
                                                            evdd_value_id w_high);
 
 typedef enum e_evddNormalizeStrategy {
-    EVDD_NORMALIZE_FIRST_NONZERO = 0,
+    EVDD_NORMALIZE_FIRST_NONZERO = 0, /**< Prefer low; if low is 0, factor from high. */
+    EVDD_NORMALIZE_LOW,               /**< Always factor the low edge; if low is 0, leave high. */
     EVDD_NORMALIZE_MAX_MAGNITUDE,
     EVDD_NORMALIZE_L2,
     EVDD_NORMALIZE_CUSTOM

@@ -38,6 +38,7 @@ static EvddValueRow *evddValues = NULL;
 
 static evddNormResult evdd_norm_first_nonzero(evdd_value_id w_low,
                                               evdd_value_id w_high);
+static evddNormResult evdd_norm_low(evdd_value_id w_low, evdd_value_id w_high);
 static evddNormResult evdd_norm_max_magnitude(evdd_value_id w_low,
                                               evdd_value_id w_high);
 static evddNormResult evdd_norm_l2(evdd_value_id w_low, evdd_value_id w_high);
@@ -292,6 +293,11 @@ void evdd_set_normalization(evdd_value_type type, evddNormalizeStrategy strategy
         ok = fns->iszerofun && fns->mulfun && fns->divfun;
         if (ok)
             fns->normalizefun = evdd_norm_first_nonzero;
+        break;
+    case EVDD_NORMALIZE_LOW:
+        ok = fns->iszerofun && fns->mulfun && fns->divfun;
+        if (ok)
+            fns->normalizefun = evdd_norm_low;
         break;
     case EVDD_NORMALIZE_MAX_MAGNITUDE:
         ok = fns->iszerofun && fns->abscmpfun && fns->mulfun && fns->divfun;
@@ -555,6 +561,24 @@ static evddNormResult evdd_norm_first_nonzero(evdd_value_id w_low,
     r.incoming = w_high;
     r.w_low = EVDD_VALUE_ZERO;
     r.w_high = EVDD_VALUE_ONE;
+    return r;
+}
+
+/** Always normalize by the low edge; never pull a factor from high alone. */
+static evddNormResult evdd_norm_low(evdd_value_id w_low, evdd_value_id w_high)
+{
+    evddNormResult r;
+    if (evdd_value_is_zero(w_low) && evdd_value_is_zero(w_high))
+        return evdd_norm_zeros();
+    if (evdd_value_is_zero(w_low)) {
+        r.incoming = EVDD_VALUE_ONE;
+        r.w_low = EVDD_VALUE_ZERO;
+        r.w_high = w_high;
+        return r;
+    }
+    r.incoming = w_low;
+    r.w_low = EVDD_VALUE_ONE;
+    r.w_high = evdd_value_div(w_high, w_low);
     return r;
 }
 

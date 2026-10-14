@@ -14,6 +14,8 @@
 #ifndef EVDD_H
 #define EVDD_H
 
+#include <stdio.h>
+
 #include "evdd_value.h"
 
 #ifdef __cplusplus
@@ -46,14 +48,14 @@ EVDD evdd_true(void);
 /**
  * Eager makenode: weight-normalize outgoing edges, then unique-table
  * lookup/insert on (level, low, high, w_low', w_high').
- * Returns edge (incoming_factor, node). Never skip-reduces.
+ * Returns edge (incoming_factor, node).
  */
 EVDD evdd_makenode(unsigned int level, EVDD low, EVDD high);
 
 /**
  * Like makenode but skips weight-normalization. Still unique-lookups on
  * the raw (level, low, high, w_low, w_high). Diagram is not canonical
- * until @c evdd_normalize. Never skip-reduces.
+ * until @c evdd_normalize.
  */
 EVDD evdd_makenode_raw(unsigned int level, EVDD low, EVDD high);
 
@@ -81,6 +83,18 @@ EVDD evdd_delref(EVDD root);
  * rest onto the freelist, and rebuilds the unique-table hash.
  */
 void evdd_gbc(void);
+
+/**
+ * Print @p root as Graphviz DOT (implemented in bddio.c).
+ * Nodes = levels, dashed = low, solid = high, edge labels via to_str.
+ * Invisible root edge carries the incoming weight.
+ *
+ * If @p hide_zeros is non-zero, omit zero-weight edges and the false (0)
+ * terminal; edges into the 0-node are not drawn either.
+ */
+void evdd_printdot(EVDD root, int hide_zeros);
+void evdd_fprintdot(FILE *ofile, EVDD root, int hide_zeros);
+int  evdd_fnprintdot(char *fname, EVDD root, int hide_zeros);
 
 #ifdef __cplusplus
 }
