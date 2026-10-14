@@ -1280,7 +1280,11 @@ BDD mtbdd_operation_guarded(BDD operand, size_t* controls, size_t controlNum, BD
       PUSHREF(targetDD);
       res = op(control, READREF(1));
       POPREF(1);
-      if (HIGH(res) == LOW(res)) {
+      /* Collapse a redundant node, but only an internal one: the LOW and
+         HIGH fields of a terminal hold its value bookkeeping, and when
+         they happen to match the leaf was replaced by an unrelated node
+         (usually the constant 0). */
+      if (!ISCONST(res) && !ISTERMINAL(res) && HIGH(res) == LOW(res)) {
          res = LOW(res);
       }
    }
