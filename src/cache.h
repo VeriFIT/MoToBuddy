@@ -64,7 +64,12 @@ extern void BddCache_done(BddCache *);
 extern int  BddCache_resize(BddCache *, int);
 extern void BddCache_reset(BddCache *);
 
-#define BddCache_lookup(cache, hash) (&(cache)->table[hash % (cache)->tablesize])
+#ifndef HASHRANGE   /* also in kernel.h; see the comment there */
+#define HASHRANGE(h, n) \
+   ((unsigned int)(((unsigned long long)((unsigned int)(h) * 0x9E3779B1u) * (unsigned int)(n)) >> 32))
+#endif
+
+#define BddCache_lookup(cache, hash) (&(cache)->table[HASHRANGE((hash), (cache)->tablesize)])
 
 #define BddCache_is_valid(cache, entry) \
     ((entry)->generation == (cache)->current_generation)
