@@ -1120,6 +1120,136 @@ static void test_combinator_differential() {
     teardown();
 }
 
+/* ------------------------------------------------------------------------=
+ * Parametrised operation, and every terminal domain at scale
+ * ---------------------------------------------------------------------= */
+
+/* Swap at the target when the parameter is odd, keep the node otherwise. */
+static BDD op_swap_if_odd(size_t ctrl, BDD lo, BDD hi, size_t p) {
+    return (p & 1) ? bdd_makenode((int)ctrl, hi, lo) : bdd_makenode((int)ctrl, lo, hi);
+}
+
+static void test_operation_param_differential() {
+    printf("\n== differential: operation_param ==\n");
+    Fixture f = setup_custom(DV);
+    bdd_gbc_hook(NULL);
+    int bad = 0, n = 0;
+    for (int it = 0; it < 80; ++it) {
+        Table tl = random_table();
+        BDD l = build_table(f, tl);
+        size_t target = (size_t)(1 + mrand(DV - 1));
+        std::vector<size_t> ctl;
+        for (size_t v = 0; v < target; ++v)
+            if (mrand(2) == 0)
+                ctl.push_back(v);
+        std::vector<size_t> controls = ctl;
+        controls.push_back(target);
+        for (size_t p = 0; p < 4; ++p) {
+            Table expect(DN);
+            for (int a = 0; a < DN; ++a) {
+                bool all_set = true;
+                for (size_t c : ctl)
+                    all_set = all_set && ((a >> c) & 1);
+                expect[a] = (all_set && (p & 1)) ? tl[a ^ (1 << target)] : tl[a];
+            }
+            /* The parameter's high half takes part in the cache key too. */
+            size_t param = p | ((size_t)(it & 3) << 32);
+            ++n;
+            if (!stable_and_equal([&] {
+                    return mtbdd_operation_param(l, controls.data(), ctl.size(), op_swap_if_odd, param);
+                }, expect))
+                ++bad;
+        }
+        bdd_delref(l);
+    }
+    char msg[96];
+    snprintf(msg, sizeof msg, "operation_param agrees with value tables on %d random cases", n);
+    EXPECT(bad == 0, msg);
+    teardown();
+}
+
+template <class T> static void *add_values(void *a, void *b) {
+    T *r = (T *)malloc(sizeof(T));
+    *r = (a ? *(T *)a : T(0)) + (b ? *(T *)b : T(0));
+    return r;
+}
+
+/* Builds COUNT distinct terminals in one domain (forcing the value tables
+ * to grow past their initial 10000 entries), checks interning and value
+ * round trips, drops them all, collects, and builds a fresh set to reuse
+ * the reclaimed slots. Then applies an addition over a small diagram. */
+template <class T>
+static void check_domain(domainTypes dom, const char *name, T scale, T offset) {
+    const int COUNT = 25000;
+    mtbdd_init(200000, 10000);
+    bdd_gbc_hook(NULL);
+    bdd_setvarnum(2);
+    SETDOMAIN(dom);
+
+    bool ok = true;
+    std::vector<BDD> leaves(COUNT);
+    for (int i = 0; i < COUNT; ++i) {
+        T v = (T)i * scale + offset;
+        leaves[i] = bdd_addref(mtbdd_maketerminal(&v, 0));
+    }
+    for (int i = 0; i < COUNT && ok; i += 97) {
+        T v = (T)i * scale + offset;
+        ok = ISTERMINAL(leaves[i]) && mtbdd_maketerminal(&v, 0) == leaves[i] &&
+             *(T *)mtbdd_getTerminalValue(leaves[i]) == v &&
+             *(T *)mtbdd_getvaluep(&bddnodes[leaves[i]]) == v;
+    }
+    bool distinct = leaves[0] != leaves[1] && leaves[COUNT - 1] != leaves[COUNT - 2];
+    char msg[128];
+    snprintf(msg, sizeof msg, "%s: %d distinct terminals intern and round-trip", name, COUNT);
+    EXPECT(ok && distinct, msg);
+
+    for (BDD t : leaves)
+        bdd_delref(t);
+    bdd_gbc();
+    ok = true;
+    for (int i = 0; i < COUNT; ++i) {
+        T v = (T)(i + COUNT) * scale + offset;
+        leaves[i] = bdd_addref(mtbdd_maketerminal(&v, 0));
+    }
+    for (int i = 0; i < COUNT && ok; i += 89) {
+        T v = (T)(i + COUNT) * scale + offset;
+        ok = *(T *)mtbdd_getTerminalValue(leaves[i]) == v;
+    }
+    snprintf(msg, sizeof msg, "%s: terminals rebuilt after garbage collection keep their values", name);
+    EXPECT(ok, msg);
+    for (BDD t : leaves)
+        bdd_delref(t);
+
+    T a = (T)3, b = (T)4, c = (T)10;
+    BDD ta = mtbdd_maketerminal(&a, 0), tb = mtbdd_maketerminal(&b, 0), tc = mtbdd_maketerminal(&c, 0);
+    BDD l = bdd_addref(bdd_makenode(0, ta, tb));
+    BDD r = bdd_addref(bdd_makenode(1, tc, tc == tb ? ta : tb));
+    BDD sum = bdd_addref(mtbdd_apply(l, r, add_values<T>));
+    bool sums = true;
+    for (int x = 0; x < 4; ++x) {
+        BDD n0 = sum;
+        while (!ISTERMINAL(n0) && !ISCONST(n0))
+            n0 = ((x >> LEVEL(n0)) & 1) ? HIGH(n0) : LOW(n0);
+        T lv = (x & 1) ? b : a, rv = (x & 2) ? b : c;
+        sums = sums && ISTERMINAL(n0) && *(T *)mtbdd_getTerminalValue(n0) == (T)(lv + rv);
+    }
+    snprintf(msg, sizeof msg, "%s: apply adds values along every path", name);
+    EXPECT(sums, msg);
+    bdd_delref(l);
+    bdd_delref(r);
+    bdd_delref(sum);
+    bdd_done();
+}
+
+static void test_all_domains() {
+    printf("\n== terminal domains at scale ==\n");
+    check_domain<int>(INTVAL, "INTVAL", 1, -12000);
+    check_domain<unsigned>(UNSIGNEDVAL, "UNSIGNEDVAL", 3u, 42u);
+    check_domain<float>(FLOATVAL, "FLOATVAL", 0.5f, -1.0f);
+    check_domain<long>(LONGVAL, "LONGVAL", 4294967297L, -7L); /* equal 32-bit halves occur */
+    check_domain<double>(DOUBLEVAL, "DOUBLEVAL", 0.25, -0.0);
+}
+
 int main() {
     printf("MoToBuddy MTBDD test suite\n");
 
@@ -1139,6 +1269,8 @@ int main() {
     test_differential();
     test_mtbdd_argument_checks();
     test_combinator_differential();
+    test_operation_param_differential();
+    test_all_domains();
 
     printf("\n----------------------------------------\n");
     printf("passed=%d failed=%d xfailed=%d\n", g_passed, g_failed, g_xfailed);

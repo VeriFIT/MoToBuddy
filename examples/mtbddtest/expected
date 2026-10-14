@@ -157,6 +157,26 @@ PASS: lockstep_to exchanges whole subtrees (80 cases)
 PASS: lockstep_to exchanges the chosen children (320 cases)
 PASS: make_swap(paramL, paramR) exchanges LOW children (80 cases)
 
+== differential: operation_param ==
+PASS: operation_param agrees with value tables on 320 random cases
+
+== terminal domains at scale ==
+PASS: INTVAL: 25000 distinct terminals intern and round-trip
+PASS: INTVAL: terminals rebuilt after garbage collection keep their values
+PASS: INTVAL: apply adds values along every path
+PASS: UNSIGNEDVAL: 25000 distinct terminals intern and round-trip
+PASS: UNSIGNEDVAL: terminals rebuilt after garbage collection keep their values
+PASS: UNSIGNEDVAL: apply adds values along every path
+PASS: FLOATVAL: 25000 distinct terminals intern and round-trip
+PASS: FLOATVAL: terminals rebuilt after garbage collection keep their values
+PASS: FLOATVAL: apply adds values along every path
+PASS: LONGVAL: 25000 distinct terminals intern and round-trip
+PASS: LONGVAL: terminals rebuilt after garbage collection keep their values
+PASS: LONGVAL: apply adds values along every path
+PASS: DOUBLEVAL: 25000 distinct terminals intern and round-trip
+PASS: DOUBLEVAL: terminals rebuilt after garbage collection keep their values
+PASS: DOUBLEVAL: apply adds values along every path
+
 ----------------------------------------
-passed=105 failed=0 xfailed=0
+passed=121 failed=0 xfailed=0
 All tests passed.
