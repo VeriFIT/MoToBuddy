@@ -1,6 +1,8 @@
 #!/bin/tcsh -f
 
+# "Nodes" is the total number of nodes ever produced, which depends on how
+# often lossy cache misses force recomputation, not on the result.
 foreach N ( 4 10 16 20 30 50 64 80 )
     echo "Running with N = $N" >> result
-    ./milner $N | grep -E -v '^Garbage collection' >> result
+    ./milner $N | grep -E -v '^Garbage collection' | grep -E -v '^Nodes +=' >> result
 end
