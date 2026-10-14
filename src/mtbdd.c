@@ -14,7 +14,7 @@ unsigned  (*customHash)(void *) = NULL;
 int       (*customCompare)(void *, void *) = NULL;
 void      (*customFree)(void *);
 
-#define NODEHASH(lvl,l,h) (((TRIPLE(lvl,l,h) % bddnodesize) + 2) % bddnodesize)
+/* NODEHASH comes from mtbdd.h; it must match the kernel's. */
 #define ISMTBDDLEAF(a) (ISTERMINAL(a) || ISCONST(a))
 
 /* Hash the full controls vector (length controlNum+1: controls + target). */

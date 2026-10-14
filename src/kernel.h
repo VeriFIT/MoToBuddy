@@ -192,6 +192,16 @@ extern int mtbdd_operation_invalid_value_flag;
 #define PAIR(a,b)      ((unsigned int)((((unsigned int)a)+((unsigned int)b))*(((unsigned int)a)+((unsigned int)b)+((unsigned int)1))/((unsigned int)2)+((unsigned int)a)))
 #define TRIPLE(a,b,c)  ((unsigned int)(PAIR((unsigned int)c,PAIR(a,b))))
 
+/* Maps a 32-bit hash onto [0, n) without a division: a multiplicative
+   (Fibonacci) mix spreads the hash into the high bits, and the high half of
+   the 64-bit product with n is the index (Lemire's fast range reduction).
+   Hardware division was a large share of bdd_makenode and of every cache
+   lookup. */
+#ifndef HASHRANGE
+#define HASHRANGE(h, n) \
+   ((unsigned int)(((unsigned long long)((unsigned int)(h) * 0x9E3779B1u) * (unsigned int)(n)) >> 32))
+#endif
+
 
    /* Inspection of BDD nodes */
 #define ISCONST(a) ((a) < 2)
