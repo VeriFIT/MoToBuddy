@@ -93,6 +93,70 @@ PASS: operation_guarded of false
 PASS: leaf_count unmarks, so a second count agrees
 PASS: mtbdd dot output contains leaf values
 
+== differential: random MTBDDs ==
+PASS: apply (add and mul) agrees with value tables on 120 random cases
+PASS: apply_param agrees with value tables on 120 random cases
+PASS: apply_unary agrees with value tables on 120 random cases
+PASS: apply_unary_param agrees with value tables on 120 random cases
+PASS: apply_guarded agrees with value tables on 120 random cases
+PASS: apply_guarded_param agrees with value tables on 120 random cases
+PASS: apply_unary_guarded agrees with value tables on 120 random cases
+PASS: operation (controlled swap) agrees with value tables on 120 random cases
+PASS: operation_guarded (controlled swap) agrees with value tables on 120 random cases
+PASS: leaf_count agrees with value tables on 120 random cases
+
+== argument checks ==
+Error: NULL operation passed to mtbdd_apply.
+PASS: apply with a NULL operation returns false
+Error: NULL operation passed to mtbdd_apply_param.
+PASS: apply_param with a NULL operation returns false
+Error: NULL operation passed to mtbdd_apply_unary.
+PASS: apply_unary with a NULL operation returns false
+Error: NULL operation passed to mtbdd_apply_unary_param.
+PASS: apply_unary_param with a NULL operation returns false
+Error: NULL operation passed to mtbdd_apply_guarded.
+PASS: apply_guarded with a NULL operation returns false
+Error: NULL operation passed to mtbdd_apply_guarded_param.
+PASS: apply_guarded_param with a NULL operation returns false
+Error: NULL operation passed to mtbdd_apply_unary_guarded.
+PASS: apply_unary_guarded with a NULL operation returns false
+Error: NULL operation passed to mtbdd_operation.
+PASS: operation with a NULL operation returns false
+Error: NULL operation passed to mtbdd_operation_guarded.
+PASS: operation_guarded with a NULL operation returns false
+checkA
+checkA
+PASS: apply rejects an id beyond the table
+checkA
+PASS: apply_param rejects an id beyond the table
+checkA
+PASS: apply_unary rejects an id beyond the table
+checkA
+PASS: apply_unary_param rejects an id beyond the table
+checkA
+checkA
+checkA
+PASS: ite rejects an id beyond the table
+checkA
+PASS: operation rejects an id beyond the table
+Error: NULL operation passed to mtbdd_apply.
+PASS: a NULL operation is reported as BDD_OP
+checkA
+PASS: an invalid node is reported as BDD_ILLBDD
+
+== differential: combinators ==
+PASS: traverse_to with descent LR swaps the target level (40 cases)
+PASS: traverse_to with descent LR rewrites the LOW and HIGH child (40 cases)
+PASS: traverse_to with descent RL swaps the target level (40 cases)
+PASS: traverse_to with descent RL rewrites the LOW and HIGH child (40 cases)
+PASS: traverse_to with descent L swaps the target level (40 cases)
+PASS: traverse_to with descent L rewrites the LOW and HIGH child (40 cases)
+PASS: traverse_to with descent R swaps the target level (40 cases)
+PASS: traverse_to with descent R rewrites the LOW and HIGH child (40 cases)
+PASS: lockstep_to exchanges whole subtrees (80 cases)
+PASS: lockstep_to exchanges the chosen children (320 cases)
+PASS: make_swap(paramL, paramR) exchanges LOW children (80 cases)
+
 ----------------------------------------
-passed=67 failed=0 xfailed=0
+passed=105 failed=0 xfailed=0
 All tests passed.
