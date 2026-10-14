@@ -518,7 +518,7 @@ private:
    friend int    bdd_fnprintdot(char*, const bdd &);
    friend void   bdd_fprintdot(FILE*, const bdd &);
    friend std::ostream &operator<<(std::ostream &, const bdd &);
-   friend int    bdd_fnsave(char*, const bdd &);
+   friend int    bdd_fnsave(char*, const bdd &, const char *, const char *);
    friend int    bdd_save(FILE*, const bdd &);
    friend int    bdd_fnload(char*, bdd &);
    friend int    bdd_load(FILE*, bdd &);
@@ -706,26 +706,32 @@ inline void bdd_fprintset(FILE *file, const bdd &r)
 inline void bdd_printset(const bdd &r)
 { bdd_printset(r.root); }
 
+   /* Default terminal printer for the dot output of plain BDDs, which have
+      no MTBDD terminals: prints the node number should one ever appear. */
+inline void bdd_default_terminal_printer(BDD r, FILE *ofile)
+{ fprintf(ofile, "%d", r); }
+
 inline void bdd_printdot(const bdd &r)
-{ bdd_printdot(r.root); }
+{ bdd_printdot(r.root, bdd_default_terminal_printer); }
 
 inline void bdd_fprintdot(FILE* ofile, const bdd &r)
-{ bdd_fprintdot(ofile, r.root); }
+{ bdd_fprintdot(ofile, r.root, bdd_default_terminal_printer); }
 
 inline int bdd_fnprintdot(char* fname, const bdd &r)
-{ return bdd_fnprintdot(fname, r.root); }
+{ return bdd_fnprintdot(fname, r.root, bdd_default_terminal_printer); }
 
-inline int bdd_fnsave(char *fname, const bdd &r)
-{ return bdd_fnsave(fname, r.root); }
+inline int bdd_fnsave(char *fname, const bdd &r,
+		      const char *bddname="bdd", const char *bddtype="BDD")
+{ return bdd_fnsave(fname, r.root, (char*)bddname, (char*)bddtype); }
 
 inline int bdd_save(FILE *ofile, const bdd &r)
 { return bdd_save(ofile, r.root); }
 
 inline int bdd_fnload(char *fname, bdd &r)
-{ int lr,e; e=bdd_fnload(fname, &lr); r=bdd(lr); return e; }
+{ int lr=0,e; e=bdd_fnload(fname, &lr); r=bdd(lr); return e; }
 
 inline int bdd_load(FILE *ifile, bdd &r)
-{ int lr,e; e=bdd_load(ifile, &lr); r=bdd(lr); return e; }
+{ int lr=0,e; e=bdd_load(ifile, &lr); r=bdd(lr); return e; }
 
 inline int bdd_addvarblock(const bdd &v, int f)
 { return bdd_addvarblock(v.root, f); }

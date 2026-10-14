@@ -328,6 +328,9 @@ void bdd_resetpair(bddPair *p)
    for (n=0 ; n<bddvarnum ; n++)
       p->result[n] = bdd_ithvar(n);
    p->last = 0;
+   /* A fresh id, so results cached for the old contents of the pair are
+      not served for the reset one. */
+   p->id = update_pairsid();
 }
 
 

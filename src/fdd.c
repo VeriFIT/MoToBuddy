@@ -764,7 +764,7 @@ static void fdd_printset_rec(FILE *ofile, int r, int *set)
 	       filehandler(ofile, n);
 	    else
 	       fprintf(ofile, "%d", n);
-	    printf(":");
+	    fprintf(ofile, ":");
 
 	    var = domain[n].ivar;
 	    

@@ -1128,7 +1128,7 @@ BVEC bvec_shr(BVEC l, BVEC r, BDD c)
       for (m=0 ; m<l.bitnum ; m++)
       {
    	    /* Set the m'th new location to be the (m+n)'th old location */
-	 if (m+n <= 2)
+	 if (m+n < l.bitnum)
 	    tmp1 = bdd_addref( bdd_and(rEquN, l.bitvec[m+n]) );
 	 else
 	    tmp1 = bdd_addref( bdd_and(rEquN, c) );

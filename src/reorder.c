@@ -2134,6 +2134,25 @@ DESCR   {* Creates a new variable block with the variables in the variable
 	   *}
 RETURN  {* A non-negative identifier on success, otherwise a negative error code. *}
 ALSO {* bdd\_varblockall, fdd\_intaddvarblock, bdd\_clrvarblocks *} */
+/* A block's variables must occupy adjacent levels: bddtree's update_seq
+   indexes seq[] by level offset from the lowest level in the block and
+   writes past the end of the array otherwise. */
+static int block_is_adjacent(int first, int last)
+{
+   int n, minlevel = bddvar2level[first], maxlevel = bddvar2level[first];
+
+   for (n=first+1 ; n<=last ; n++)
+   {
+      if (bddvar2level[n] < minlevel)
+	 minlevel = bddvar2level[n];
+      if (bddvar2level[n] > maxlevel)
+	 maxlevel = bddvar2level[n];
+   }
+
+   return maxlevel - minlevel == last - first;
+}
+
+
 int bdd_addvarblock(BDD b, int fixed)
 {
    BddTree *t;
@@ -2155,6 +2174,9 @@ int bdd_addvarblock(BDD b, int fixed)
 	 last = v[n];
    }
 
+   if (!block_is_adjacent(first, last))
+      return bdd_error(BDD_VARBLK);
+
    if ((t=bddtree_addrange(vartree, first,last, fixed,blockid)) == NULL)
       return bdd_error(BDD_VARBLK);
    
@@ -2169,6 +2191,9 @@ int bdd_intaddvarblock(int first, int last, int fixed)
 
    if (first < 0  ||  first >= bddvarnum  ||  last < 0  ||  last >= bddvarnum)
       return bdd_error(BDD_VAR);
+
+   if (!block_is_adjacent(first, last))
+      return bdd_error(BDD_VARBLK);
    
    if ((t=bddtree_addrange(vartree, first,last, fixed,blockid)) == NULL)
       return bdd_error(BDD_VARBLK);
