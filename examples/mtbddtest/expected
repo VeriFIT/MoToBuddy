@@ -79,6 +79,20 @@ PASS: cube2 returns an internal node at first var level
 PASS: terminal before done
 PASS: re-init after done works
 
+== guarded variants ==
+PASS: apply_guarded_param adds param at the leaves
+PASS: apply_guarded_param result is stable (cache hit)
+PASS: apply_guarded_param distinguishes params
+PASS: apply_unary_guarded scales every leaf
+PASS: apply_unary_guarded result is stable (cache hit)
+PASS: apply_unary_guarded of a constant
+PASS: operation_guarded swaps level-0 children
+PASS: operation_guarded descends to level 1 and swaps there
+PASS: operation_guarded with a control only transforms the HIGH branch
+PASS: operation_guarded of false
+PASS: leaf_count unmarks, so a second count agrees
+PASS: mtbdd dot output contains leaf values
+
 ----------------------------------------
-passed=55 failed=0 xfailed=0
+passed=67 failed=0 xfailed=0
 All tests passed.

@@ -52,21 +52,10 @@ jobs:
       - name: Build library and examples
         run: make build BUILD_TYPE=${{ matrix.build_type }} STATS=${{ matrix.stats }}
 
-      # The suites that exercise this fork's own additions. These are the
-      # ones worth making a required status check.
-      - name: MTBDD and quantum gate suites
-        run: examples/check.sh mtbddtest quantum_gates
-
-      # The plain-BDD suites inherited from BuDDy. All of them currently fail
-      # on main: with dynamic reordering enabled, apply_rec recurses without
-      # bound and the kernel aborts with "bddrefstack overflow" (bddcalc), or
-      # the programs die part-way and leave truncated output (adder, queen,
-      # money, ...). Until that is fixed this step is informational: it runs
-      # and shows the diffs, but a failure does not redden the job. Drop
-      # continue-on-error once the suites pass.
-      - name: Plain BDD suites (known failing on main)
-        continue-on-error: true
-        run: examples/check.sh adder bddcalc bddtest cmilner fdd milner money queen
+      # Every example suite: the plain-BDD ones inherited from BuDDy and the
+      # MTBDD and quantum gate ones that exercise this fork's own additions.
+      - name: Example suites
+        run: make test
 
   # MEDUSA is the main consumer of this library. Its Makefile clones
   # MoToBuddy at a pinned commit; here that pin is overridden with the commit

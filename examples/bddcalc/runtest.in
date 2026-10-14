@@ -2,13 +2,18 @@
 
 cd @CMAKE_CURRENT_SOURCE_DIR@
 
+# The cache statistics printed at exit are all zero unless the library is
+# built with BUDDY_STATS=ON, so the counters are filtered out of the result.
+
 # truncate the result file
 : > @CMAKE_CURRENT_BINARY_DIR@/result
 
 for f in ./*.cal examples/*.cal; do
     echo "Running with cal file : $f" | tee -a @CMAKE_CURRENT_BINARY_DIR@/result
     @CMAKE_CURRENT_BINARY_DIR@/bddcalc $f \
-        | grep -E -v '^Garbage collection' >> @CMAKE_CURRENT_BINARY_DIR@/result
+        | grep -E -v '^Garbage collection' \
+        | grep -E -v '^(Unique (Access|Chain|Hit|Miss)|Operator (Hits|Miss)|=> Hit rate|Swap count)' \
+        >> @CMAKE_CURRENT_BINARY_DIR@/result
 done
 
 diff expected @CMAKE_CURRENT_BINARY_DIR@/result

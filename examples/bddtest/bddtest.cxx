@@ -71,6 +71,19 @@ void test1_check(bdd x)
 }
 
 
+/* A private generator, so that the sequence of random sets does not shift
+ * whenever the library itself consumes rand() (bdd_prime_gte uses rand() in
+ * its primality test, and the number of such calls depends on how many
+ * caches the kernel allocates). */
+static unsigned long random_state = 12345;
+
+static int next_random()
+{
+  random_state = random_state * 1103515245UL + 12345UL;
+  return (int)((random_state / 65536UL) % 32768UL);
+}
+
+
 void test1()
 {
   bdd a = bdd_ithvar(0);
@@ -104,9 +117,9 @@ void test1()
   bdd set = bddtrue;
   for (i=0 ; i<50 ; ++i)
   {
-    int v = rand() % varnum;
-    int s = rand() % 2;
-    int o = rand() % 2;
+    int v = next_random() % varnum;
+    int s = next_random() % 2;
+    int o = next_random() % 2;
     
     if (o == 0)
     {

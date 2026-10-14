@@ -598,6 +598,116 @@ static void test_reinit() {
  * main
  * ---------------------------------------------------------------------= */
 
+/* ------------------------------------------------------------------------=
+ * Tests: guarded variants with parameters, unary guarded, operation guarded,
+ * leaf counting and dot output
+ * ---------------------------------------------------------------------= */
+
+static Fixture *g_guard_fixture = nullptr;
+
+/* Binary guard with a parameter: at two leaves, returns a leaf holding
+ * l + r + param; above that, asks for recursion. */
+static BDD guarded_sum_param(BDD l, BDD r, size_t p) {
+    if ((ISTERMINAL(l) || ISCONST(l)) && (ISTERMINAL(r) || ISCONST(r))) {
+        FLAG_VALID_APPLY();
+        int lv = ISTERMINAL(l) ? leaf_int(l) : 0;
+        int rv = ISTERMINAL(r) ? leaf_int(r) : 0;
+        return make_int_leaf(*g_guard_fixture, lv + rv + (int)p);
+    }
+    FLAG_INVALID_APPLY();
+    return 0;
+}
+
+/* Unary guard: at a leaf, returns a leaf holding value * arg. */
+static BDD guarded_scale(BDD l, void *arg) {
+    if (ISTERMINAL(l)) {
+        FLAG_VALID_APPLY();
+        return make_int_leaf(*g_guard_fixture, leaf_int(l) * (int)(size_t)arg);
+    }
+    if (ISCONST(l)) {
+        FLAG_VALID_APPLY();
+        return l;
+    }
+    FLAG_INVALID_APPLY();
+    return 0;
+}
+
+/* Operation guard: at the target level swaps the children, elsewhere asks
+ * the library to keep descending. The guard is also consulted at control
+ * levels, so it must check for the target explicitly. */
+static size_t g_swap_target = 0;
+static BDD guarded_swap(size_t ctrl, BDD node) {
+    if (ctrl == g_swap_target && !ISCONST(node) && !ISTERMINAL(node) &&
+        (size_t)LEVEL(node) == ctrl) {
+        FLAG_VALID_OPERATION();
+        return bdd_makenode((int)ctrl, HIGH(node), LOW(node));
+    }
+    FLAG_INVALID_OPERATION();
+    return node;
+}
+
+static void test_guarded_variants() {
+    printf("\n== guarded variants ==\n");
+    Fixture f = setup_custom(3);
+    g_guard_fixture = &f;
+
+    BDD left = build_int_tree(f, {1, 2, 3, 4});
+    BDD right = bdd_makenode(1, make_int_leaf(f, 10), make_int_leaf(f, 20));
+
+    BDD sum = mtbdd_apply_guarded_param(left, right, guarded_sum_param, 100);
+    EXPECT(leaf_int(LOW(LOW(sum))) == 111 && leaf_int(HIGH(LOW(sum))) == 122 &&
+               leaf_int(LOW(HIGH(sum))) == 113 && leaf_int(HIGH(HIGH(sum))) == 124,
+           "apply_guarded_param adds param at the leaves");
+    BDD sum2 = mtbdd_apply_guarded_param(left, right, guarded_sum_param, 100);
+    EXPECT(sum2 == sum, "apply_guarded_param result is stable (cache hit)");
+    BDD sum3 = mtbdd_apply_guarded_param(left, right, guarded_sum_param, 7);
+    EXPECT(leaf_int(LOW(LOW(sum3))) == 18, "apply_guarded_param distinguishes params");
+
+    BDD scaled = mtbdd_apply_unary_guarded(left, guarded_scale, 3);
+    EXPECT(leaf_int(LOW(LOW(scaled))) == 3 && leaf_int(HIGH(HIGH(scaled))) == 12,
+           "apply_unary_guarded scales every leaf");
+    EXPECT(mtbdd_apply_unary_guarded(left, guarded_scale, 3) == scaled,
+           "apply_unary_guarded result is stable (cache hit)");
+    EXPECT(mtbdd_apply_unary_guarded(0, guarded_scale, 3) == 0,
+           "apply_unary_guarded of a constant");
+
+    size_t controls0[] = {0};
+    g_swap_target = 0;
+    BDD swapped = mtbdd_operation_guarded(left, controls0, 0, guarded_swap);
+    EXPECT(leaf_int(LOW(LOW(swapped))) == 3 && leaf_int(LOW(HIGH(swapped))) == 1,
+           "operation_guarded swaps level-0 children");
+    size_t controls1[] = {1};
+    g_swap_target = 1;
+    BDD swapped1 = mtbdd_operation_guarded(left, controls1, 0, guarded_swap);
+    EXPECT(leaf_int(LOW(LOW(swapped1))) == 2 && leaf_int(HIGH(LOW(swapped1))) == 1 &&
+               leaf_int(LOW(HIGH(swapped1))) == 4,
+           "operation_guarded descends to level 1 and swaps there");
+    size_t controls_cx[] = {0, 1};
+    g_swap_target = 1;
+    BDD cx = mtbdd_operation_guarded(left, controls_cx, 1, guarded_swap);
+    EXPECT(LOW(cx) == LOW(left) && leaf_int(LOW(HIGH(cx))) == 4 && leaf_int(HIGH(HIGH(cx))) == 3,
+           "operation_guarded with a control only transforms the HIGH branch");
+    g_swap_target = 0;
+    EXPECT(mtbdd_operation_guarded(0, controls0, 0, guarded_swap) == 0,
+           "operation_guarded of false");
+
+    EXPECT(mtbdd_leaf_count(left) == 4 && mtbdd_leaf_count(left) == 4,
+           "leaf_count unmarks, so a second count agrees");
+
+    FILE *tmp = tmpfile();
+    buddy_mtbdd_fprintdot(tmp, left);
+    rewind(tmp);
+    char buf[4096];
+    size_t n = fread(buf, 1, sizeof buf - 1, tmp);
+    buf[n] = 0;
+    fclose(tmp);
+    EXPECT(strstr(buf, "digraph") != nullptr && strstr(buf, "\"3\"") != nullptr,
+           "mtbdd dot output contains leaf values");
+
+    g_guard_fixture = nullptr;
+    teardown();
+}
+
 int main() {
     printf("MoToBuddy MTBDD test suite\n");
 
@@ -613,6 +723,7 @@ int main() {
     test_freefun_contract();
     test_cube2();
     test_reinit();
+    test_guarded_variants();
 
     printf("\n----------------------------------------\n");
     printf("passed=%d failed=%d xfailed=%d\n", g_passed, g_failed, g_xfailed);
