@@ -66,9 +66,11 @@ extern void BddCache_reset(BddCache *);
 
 #ifndef HASHRANGE   /* also in kernel.h; see the comment there */
 #define HASHRANGE(h, n) \
-   ((unsigned int)(((unsigned long long)((unsigned int)(h) * 0x9E3779B1u) * (unsigned int)(n)) >> 32))
+   ((unsigned int)(((unsigned long long)(unsigned int)(h) * (unsigned int)(n)) >> 32))
 #endif
 
+/* hash must come from the HASHn macros in kernel.h: HASHRANGE does no
+   mixing of its own. */
 #define BddCache_lookup(cache, hash) (&(cache)->table[HASHRANGE((hash), (cache)->tablesize)])
 
 #define BddCache_is_valid(cache, entry) \
