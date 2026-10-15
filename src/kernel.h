@@ -189,17 +189,46 @@ extern int mtbdd_operation_invalid_value_flag;
 
    /* Hashfunctions */
 
+/* Cantor pairing. Table and cache placement no longer use it (see below),
+   but the reordering hash in reorder.c and the controls key in mtbdd.c,
+   which is stored and compared, still do. */
 #define PAIR(a,b)      ((unsigned int)((((unsigned int)a)+((unsigned int)b))*(((unsigned int)a)+((unsigned int)b)+((unsigned int)1))/((unsigned int)2)+((unsigned int)a)))
-#define TRIPLE(a,b,c)  ((unsigned int)(PAIR((unsigned int)c,PAIR(a,b))))
 
-/* Maps a 32-bit hash onto [0, n) without a division: a multiplicative
-   (Fibonacci) mix spreads the hash into the high bits, and the high half of
-   the 64-bit product with n is the index (Lemire's fast range reduction).
-   Hardware division was a large share of bdd_makenode and of every cache
-   lookup. */
+/* Hashes of 32-bit words for the operation caches (HASHn) and the unique
+   table (HASHNODE). Two words are packed into one 64-bit word and multiplied
+   by HASH_K0, whose halves are 2^32 over the golden ratio (first word) and
+   over the plastic number (second word); other words (an op, a size_t
+   parameter) get their own multipliers and are added. That sum is linear in
+   the words, and regular key patterns then share slots: HASHn xor its two
+   halves, which made MEDUSA's cache hit rates match a strong mixer's (the
+   plain sum cost up to 2% more recursive calls). In the unique table the
+   level changes in step with node ids and could cancel them in a sum, so
+   HASHNODE xors it into the packed word before multiplying. One to three
+   independent multiplications replace two chained Cantor pairings and a
+   Fibonacci multiplication. */
+#define HASH_K0 0xC13FA9A99E3779B9ULL
+#define HASH_K1 0x91E10DA5C79E7B1DULL   /* 2^64 / plastic number^2 */
+#define HASH_K2 0xC2B2AE3D27D4EB4FULL   /* xxHash64 prime 2 */
+#define HASH_W2(a,b) ((((unsigned long long)(unsigned int)(a)) << 32) | (unsigned int)(b))
+/* High half xor low half. Written in 64 bits: as a xor of two truncations,
+   gcc recomputed the low half with extra 32-bit multiplications. */
+#define HASH_FOLD(x) ((unsigned int)(((x) ^ ((x) << 32)) >> 32))
+#define HASH1(a)         ((unsigned int)(a) * (unsigned int)HASH_K0)   /* = HASH2(a,0) */
+#define HASH2(a,b)       HASH_FOLD(HASH_W2(a,b) * HASH_K0)
+#define HASH3(a,b,c)     HASH_FOLD(HASH_W2(a,b) * HASH_K0 + (unsigned int)(c) * HASH_K1)
+#define HASH4(a,b,c,d)   HASH_FOLD(HASH_W2(a,b) * HASH_K0 + HASH_W2(c,d) * HASH_K2)
+#define HASH5(a,b,c,d,e) \
+   HASH_FOLD(HASH_W2(a,b) * HASH_K0 + (unsigned int)(c) * HASH_K1 + HASH_W2(d,e) * HASH_K2)
+#define HASHNODE(lvl,l,h) \
+   ((unsigned int)(((HASH_W2(l,h) ^ (unsigned int)(lvl) * HASH_K1) * HASH_K0) >> 32))
+
+/* Maps a hash from the macros above onto [0, n) without a division: the
+   high half of its 64-bit product with n is the index (Lemire's fast range
+   reduction). Only the high bits of the hash count, so the hash must be
+   mixed; a bare node id would land every key in the first slots. */
 #ifndef HASHRANGE
 #define HASHRANGE(h, n) \
-   ((unsigned int)(((unsigned long long)((unsigned int)(h) * 0x9E3779B1u) * (unsigned int)(n)) >> 32))
+   ((unsigned int)(((unsigned long long)(unsigned int)(h) * (unsigned int)(n)) >> 32))
 #endif
 
 

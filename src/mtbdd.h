@@ -8,7 +8,7 @@
 #define SETDOMAIN(d) domaintype = d
 #define ISTERMINAL(a) (bddnodes[a].level == MAXLEVEL && LOW(a) != -1)
 #define ISTERMINALp(p) ((p)->level == MAXLEVEL && LOWp(p) != -1)
-#define NODEHASH(lvl,l,h) HASHRANGE(TRIPLE(lvl,l,h), bddnodesize)
+#define NODEHASH(lvl,l,h) HASHRANGE(HASHNODE(lvl,l,h), bddnodesize)
 #define INITIAL_TERMINAL_SIZE 10000
 
 #define DOMAIN_NOT_SHORT ((domaintype != INTVAL) && (domaintype != FLOATVAL) && (domaintype != UNSIGNEDVAL))

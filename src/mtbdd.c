@@ -469,7 +469,7 @@ BDD mtbdd_apply_rec(BDD l, BDD r, void*(*op)(void*, void*)) {
     BddCacheData *entry;
     BDD res;
 
-    entry = BddCache_lookup(&mtbdd_cache_apply, TRIPLE(l,r,(int)(size_t)op)); // hash is calculated from ID of left, right BDD nodes and casted address of the operation
+    entry = BddCache_lookup(&mtbdd_cache_apply, HASH3(l,r,(int)(size_t)op)); // hash is calculated from ID of left, right BDD nodes and casted address of the operation
     if( BddCache_is_valid(&mtbdd_cache_apply, entry)
        && entry->a == l && entry->b == r && entry->c == (int)(size_t)op){
         return entry->r.res;
@@ -548,7 +548,7 @@ BDD mtbdd_apply_param_rec(BDD l, BDD r, void*(*op)(void*, void*, size_t), size_t
     BDD res;
 
     entry = BddCache_lookup(&mtbdd_cache_apply,
-       TRIPLE(PAIR(l,r), PAIR(CACHE_SIZE_T_LO(param), CACHE_SIZE_T_HI(param)), (int)(size_t)op));
+       HASH5(l, r, (int)(size_t)op, CACHE_SIZE_T_LO(param), CACHE_SIZE_T_HI(param)));
     if( BddCache_is_valid(&mtbdd_cache_apply, entry)
        && entry->a == l && entry->b == r && entry->c == (int)(size_t)op
        && entry->d == CACHE_SIZE_T_LO(param) && entry->r2 == CACHE_SIZE_T_HI(param)){
@@ -642,7 +642,7 @@ BDD mtbdd_apply_guarded_rec(BDD l, BDD r, BDD(*op)(BDD, BDD)) {
       return res;
    }
 
-   entry = BddCache_lookup(&mtbdd_cache_apply, TRIPLE(l,r,(int)(size_t)op)); // hash is calculated from ID of left, right BDD nodes and casted address of the operation
+   entry = BddCache_lookup(&mtbdd_cache_apply, HASH3(l,r,(int)(size_t)op)); // hash is calculated from ID of left, right BDD nodes and casted address of the operation
    if( BddCache_is_valid(&mtbdd_cache_apply, entry)
       && entry->a == l && entry->b == r && entry->c == (int)(size_t)op){
       return entry->r.res;
@@ -696,7 +696,7 @@ BDD mtbdd_apply_guarded_param_rec(BDD l, BDD r, BDD(*op)(BDD, BDD, size_t), size
    }
 
    entry = BddCache_lookup(&mtbdd_cache_apply,
-      TRIPLE(PAIR(l,r), (int)(size_t)op, PAIR(CACHE_SIZE_T_LO(param), CACHE_SIZE_T_HI(param))));
+      HASH5(l, r, (int)(size_t)op, CACHE_SIZE_T_LO(param), CACHE_SIZE_T_HI(param)));
    if( BddCache_is_valid(&mtbdd_cache_apply, entry)
       && entry->a == l && entry->b == r && entry->c == (int)(size_t)op
       && entry->d == CACHE_SIZE_T_LO(param) && entry->r2 == CACHE_SIZE_T_HI(param)){
@@ -747,7 +747,7 @@ BDD mtbdd_apply_unary_rec(BDD l, void*(*op)(void*)) {
     BddCacheData *entry;
     BDD res;
 
-    entry = BddCache_lookup(&mtbdd_cache_apply, PAIR(l, (int)(size_t)op));
+    entry = BddCache_lookup(&mtbdd_cache_apply, HASH2(l, (int)(size_t)op));
     if ( BddCache_is_valid(&mtbdd_cache_apply, entry) && 
          entry->a == l && entry->b == -1 && entry->c == (int)(size_t)op) {
         return entry->r.res;
@@ -791,7 +791,7 @@ BDD mtbdd_apply_unary_param_rec(BDD l, void*(*op)(void*, size_t), size_t param) 
     BDD res;
 
     entry = BddCache_lookup(&mtbdd_cache_apply,
-       TRIPLE(l, PAIR(CACHE_SIZE_T_LO(param), CACHE_SIZE_T_HI(param)), (int)(size_t)op));
+       HASH4(l, (int)(size_t)op, CACHE_SIZE_T_LO(param), CACHE_SIZE_T_HI(param)));
     if ( BddCache_is_valid(&mtbdd_cache_apply, entry) && 
          entry->a == l && entry->b == CACHE_SIZE_T_LO(param) &&
          entry->c == (int)(size_t)op && entry->r2 == CACHE_SIZE_T_HI(param)) {
@@ -910,7 +910,7 @@ BDD mtbdd_apply_unary_guarded_rec(BDD l, BDD(*op)(BDD, void*), size_t arg) {
    BddCacheData *entry;
 
    entry = BddCache_lookup(&mtbdd_cache_apply,
-      TRIPLE(l, (int)(size_t)op, PAIR(CACHE_SIZE_T_LO(arg), CACHE_SIZE_T_HI(arg))));
+      HASH4(l, (int)(size_t)op, CACHE_SIZE_T_LO(arg), CACHE_SIZE_T_HI(arg)));
 
 
    if ( BddCache_is_valid(&mtbdd_cache_apply, entry) && 
@@ -978,7 +978,7 @@ BDD mtbdd_ite_rec(BDD f, BDD g, BDD h){
       return bdd_makenode(LEVEL(f), g, h);
    }
 
-   entry = BddCache_lookup(&mtbdd_cache_ite, TRIPLE(f,g,h));
+   entry = BddCache_lookup(&mtbdd_cache_ite, HASH3(f,g,h));
    if(BddCache_is_valid(&mtbdd_cache_ite, entry) &&
       entry->a == f && entry->b == g && entry->c == h){
       return entry->r.res;
@@ -1092,7 +1092,7 @@ BDD mtbdd_operation_rec(BDD operand, size_t* controls, size_t controlNum, BDD(*o
    size_t control = controls[0];
    int controls_key = mtbdd_controls_cachekey(controls, controlNum);
    
-   BddCacheData *entry = BddCache_lookup(&mtbdd_cache_operation, TRIPLE(operand, controls_key, (int)(size_t)op));
+   BddCacheData *entry = BddCache_lookup(&mtbdd_cache_operation, HASH3(operand, controls_key, (int)(size_t)op));
    if (BddCache_is_valid(&mtbdd_cache_operation, entry) &&
       entry->a == operand && entry->b == controls_key && entry->c == (int)(size_t)op) {
       return entry->r.res;
@@ -1170,9 +1170,8 @@ BDD mtbdd_operation_param_rec(BDD operand,
    int controls_key = mtbdd_controls_cachekey(controls, controlNum);
    
    BddCacheData *entry = BddCache_lookup(&mtbdd_cache_operation,
-      TRIPLE(PAIR(operand, controls_key),
-             PAIR(CACHE_SIZE_T_LO(param), CACHE_SIZE_T_HI(param)),
-             (int)(size_t)op));
+      HASH5(operand, controls_key, (int)(size_t)op,
+            CACHE_SIZE_T_LO(param), CACHE_SIZE_T_HI(param)));
    if (BddCache_is_valid(&mtbdd_cache_operation, entry) &&
       entry->a == operand &&
       entry->b == controls_key &&
@@ -1266,7 +1265,7 @@ BDD mtbdd_operation_guarded(BDD operand, size_t* controls, size_t controlNum, BD
    }
 
    // continue recursion and general operation
-   BddCacheData *entry = BddCache_lookup(&mtbdd_cache_operation, TRIPLE(operand, controls_key, (int)(size_t)op));
+   BddCacheData *entry = BddCache_lookup(&mtbdd_cache_operation, HASH3(operand, controls_key, (int)(size_t)op));
    if (BddCache_is_valid(&mtbdd_cache_operation, entry) &&
       entry->a == operand && entry->b == controls_key && entry->c == (int)(size_t)op) {
       return entry->r.res;

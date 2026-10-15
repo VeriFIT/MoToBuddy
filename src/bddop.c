@@ -154,19 +154,19 @@ static int    varset2vartable(BDD);
 static int    varset2svartable(BDD);
 
 
-   /* Hashvalues */
-#define NOTHASH(r)           (r)
-#define APPLYHASH(l,r,op)    (TRIPLE(l,r,op))
-#define ITEHASH(f,g,h)       (TRIPLE(f,g,h))
-#define RESTRHASH(r,var)     (PAIR(r,var))
-#define CONSTRAINHASH(f,c)   (PAIR(f,c))
-#define QUANTHASH(r)         (r)
-#define REPLACEHASH(r)       (r)
-#define VECCOMPOSEHASH(f)    (f)
-#define COMPOSEHASH(f,g)     (PAIR(f,g))
-#define SATCOUHASH(r)        (r)
-#define PATHCOUHASH(r)       (r)
-#define APPEXHASH(l,r,op)    (PAIR(l,r))
+   /* Hashvalues (mixed: BddCache_lookup does no mixing of its own) */
+#define NOTHASH(r)           (HASH1(r))
+#define APPLYHASH(l,r,op)    (HASH3(l,r,op))
+#define ITEHASH(f,g,h)       (HASH3(f,g,h))
+#define RESTRHASH(r,var)     (HASH2(r,var))
+#define CONSTRAINHASH(f,c)   (HASH2(f,c))
+#define QUANTHASH(r)         (HASH1(r))
+#define REPLACEHASH(r)       (HASH1(r))
+#define VECCOMPOSEHASH(f)    (HASH1(f))
+#define COMPOSEHASH(f,g)     (HASH2(f,g))
+#define SATCOUHASH(r)        (HASH1(r))
+#define PATHCOUHASH(r)       (HASH1(r))
+#define APPEXHASH(l,r,op)    (HASH2(l,r))
 
 #ifndef M_LN2
 #define M_LN2 0.69314718055994530942

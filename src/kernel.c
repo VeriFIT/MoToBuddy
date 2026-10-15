@@ -143,7 +143,7 @@ static char *errorstrings[BDD_ERRNUM] =
 
 /*=== OTHER INTERNAL DEFINITIONS =======================================*/
 
-#define NODEHASH(lvl,l,h) HASHRANGE(TRIPLE(lvl,l,h), bddnodesize)
+#define NODEHASH(lvl,l,h) HASHRANGE(HASHNODE(lvl,l,h), bddnodesize)
 
 
 /*************************************************************************
