@@ -89,7 +89,7 @@ def run_one(variant_dir, kind, w):
     r = subprocess.run(["taskset", "-c", CPU] + argv, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     dt = time.perf_counter() - t0
     # Garbage-collection lines carry timings; drop them.
-    h = hashlib.sha256(b"\n".join(l for l in r.stdout.split(b"\n") if not l.startswith(b"Garbage collection") and not l.startswith(b"Nodes      =")))
+    h = hashlib.sha256(b"\n".join(l for l in r.stdout.split(b"\n") if not l.startswith(b"Garbage collection") and not l.startswith(b"Nodes      =") and not l.startswith(b"Nodenum:")))
     if kind == "medusa":
         h.update(open(os.path.join(cwd, "res.dot"), "rb").read())
     return dt, h.hexdigest(), r.returncode
