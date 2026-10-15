@@ -69,7 +69,7 @@ def build(name, commit):
     sh(f"git -C {REPO} worktree add --detach {d}/mtb {sha}")
     os.makedirs(f"{d}/mtb/build")
     sh("cmake .. -DCMAKE_BUILD_TYPE=Release && make -j4 bddcalc queen cmilner milner", cwd=f"{d}/mtb/build")
-    sh(f"rsync -a --exclude lib --exclude obj --exclude '/MEDUSA_*' --exclude '/test_*' --exclude .git {medusa_src}/ {d}/medusa/")
+    sh(f"rsync -a --exclude lib --exclude obj --exclude '/MEDUSA_*' --exclude '/test_*' --exclude /benchmarks --exclude .git {medusa_src}/ {d}/medusa/")
     sh(f"make init MOTOBUDDY_REPO=file://{REPO} MOTOBUDDY_COMMIT={sha}", cwd=f"{d}/medusa")
     sh("make -j4 buddy_doubles_f128", cwd=f"{d}/medusa")
     os.makedirs(f"{d}/run", exist_ok=True)
