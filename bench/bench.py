@@ -134,9 +134,9 @@ def main():
         print(f"rep {rep + 1}/{a.reps} done", flush=True)
 
     base = names[0]
-    col = 12
+    col = max(12, max(len(n) for n in names) + 2)
     print()
-    print(f"{'workload':34s}" + "".join(f"{n:>{col}s}" for n in names) + "".join(f"{n + '/' + base:>{col + 6}s}" for n in names[1:]))
+    print(f"{'workload':34s}" + "".join(f"{n:>{col}s}" for n in names) + "".join(f"{n + '/' + base:>{len(n) + len(base) + 3}s}" for n in names[1:]))
     groups = {"medusa": {n: [] for n in names[1:]}, "buddy": {n: [] for n in names[1:]}}
     for kind, w, label in work:
         med = {n: statistics.median(times[(label, n)]) for n in names}
@@ -144,12 +144,12 @@ def main():
         for n in names[1:]:
             r = med[n] / med[base]
             groups[kind][n].append(r)
-            line += f"{r:{col + 6}.3f}"
+            line += f"{r:{len(n) + len(base) + 3}.3f}"
         print(line)
     for g, d in groups.items():
         if any(d.values()):
             print(f"{'geomean ' + g:34s}" + " " * (col * len(names)) +
-                  "".join(f"{math.exp(sum(map(math.log, d[n])) / len(d[n])):{col + 6}.3f}" for n in names[1:]))
+                  "".join(f"{math.exp(sum(map(math.log, d[n])) / len(d[n])):{len(n) + len(base) + 3}.3f}" for n in names[1:]))
     # spread, to judge noise
     spread = max((max(times[k]) - min(times[k])) / statistics.median(times[k]) for k in times)
     print(f"\nlargest (max-min)/median over all cells: {spread:.1%}")
