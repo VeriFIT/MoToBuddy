@@ -1120,6 +1120,45 @@ static void test_c_entry_points() {
 }
 
 /* ------------------------------------------------------------------------=
+ * Statistics: with BUDDY_STATS=ON every counter must count; without it
+ * every counter stays 0. The unique-table counters live in kernel.c and
+ * tell which build this is, so the output is the same in both.
+ * ---------------------------------------------------------------------= */
+
+static void test_statistics() {
+    printf("\n== statistics ==\n");
+    bdd_init(10000, 1000);
+    bdd_gbc_hook(NULL);
+    bdd_setvarnum(20);
+
+    /* x_i & x_{i+10}: an order that sifting improves */
+    bdd f = bddfalse;
+    for (int i = 0; i < 10; i++)
+        f |= bdd_ithvar(i) & bdd_ithvar(i + 10);
+    bdd g1 = f & bdd_ithvar(3);
+    bdd g2 = f & bdd_ithvar(3);   /* the same call again: an operator cache hit */
+    EXPECT(g1 == g2, "repeated operation gives the same node");
+
+    bdd_varblockall();
+    bdd_reorder(BDD_REORDER_SIFT);
+    int moved = 0;
+    for (int i = 0; i < 20; i++)
+        if (bdd_var2level(i) != i)
+            moved++;
+    EXPECT(moved > 0, "sifting moved variables");
+
+    bddCacheStat s;
+    bdd_cachestats(&s);
+    bool on = s.uniqueAccess > 0;
+    EXPECT(s.uniqueAccess >= s.uniqueHit + s.uniqueMiss, "unique-table counters are consistent");
+    EXPECT(on ? (s.opHit > 0 && s.opMiss > 0) : (s.opHit == 0 && s.opMiss == 0),
+           "operator cache counters count exactly when statistics are compiled in");
+    EXPECT(on ? s.swapCount > 0 : s.swapCount == 0,
+           "swap counter counts exactly when statistics are compiled in");
+    bdd_done();
+}
+
+/* ------------------------------------------------------------------------=
  * Main
  * ---------------------------------------------------------------------= */
 
@@ -1136,6 +1175,7 @@ int main() {
     test_load_variants();
     test_blocks_and_growth();
     test_c_entry_points();
+    test_statistics();
 
     printf("\nSummary: %d passed, %d failed\n", g_passed, g_failed);
     return g_failed == 0 ? 0 : 1;

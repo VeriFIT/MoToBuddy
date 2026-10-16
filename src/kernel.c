@@ -38,7 +38,7 @@
            as makenode may resize/move the nodetable.
 
 *************************************************************************/
-#include "config.h"
+#include "buddy_config.h"
 
 #include <stdlib.h>
 #include <string.h>

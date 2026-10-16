@@ -3,20 +3,19 @@ set_property(GLOBAL PROPERTY USE_FOLDERS On)
 # ============================================================================ #
 # Move CMake version number into BuDDy's source code
 # ============================================================================ #
-configure_file(${CMAKE_CURRENT_SOURCE_DIR}/config.h.in
-               ${CMAKE_CURRENT_SOURCE_DIR}/config.h)
-
-if (BUDDY_STATS)
-  file(APPEND config.h "\n/* BUDDY_STATS */\n")
-  file(APPEND config.h "#define SWAPCOUNT 1\n")
-  file(APPEND config.h "#define CACHESTATS 1\n")
-endif (BUDDY_STATS)
+#
+# Generated into the build directory, so that build directories configured
+# from the same checkout do not share it. It is named buddy_config.h because
+# older versions wrote config.h into src/, and a stale copy there would win
+# over one in the build directory for the quoted include in kernel.c.
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/buddy_config.h.in
+               ${CMAKE_CURRENT_BINARY_DIR}/buddy_config.h)
 
 # ============================================================================ #
 # Sources and Headers
 # ============================================================================ #
 set(HEADERS
-  config.h
+  ${CMAKE_CURRENT_BINARY_DIR}/buddy_config.h
   bdd.h
   fdd.h
   bvec.h
@@ -79,6 +78,18 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
 target_link_libraries(buddy        PUBLIC  nlohmann_json::nlohmann_json)
 
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_11)
+
+# ============================================================================ #
+# Statistics (BUDDY_STATS)
+#
+# Defined for every source file of the library: the counters live in
+# kernel.c, bddop.c and reorder.c, and only kernel.c includes
+# buddy_config.h. The bddStat and bddCacheStat layouts do not depend on
+# these, so they stay private.
+# ============================================================================ #
+if(BUDDY_STATS)
+  target_compile_definitions(${PROJECT_NAME} PRIVATE CACHESTATS=1 SWAPCOUNT=1)
+endif()
 
 # ============================================================================ #
 # Special compiler settings
