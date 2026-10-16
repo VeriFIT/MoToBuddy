@@ -59,7 +59,7 @@ typedef struct s_EvddNode {
     ((((EVDD_PAIR(EVDD_TRIPLE((lvl), (l), (h)),                                \
                   EVDD_PAIR((unsigned int)(wl), (unsigned int)(wh)))) %        \
        (unsigned int)evddnodesize) +                                           \
-      2u) %                                                                    \
+      1u) %                                                                    \
      (unsigned int)evddnodesize)
 
 /* Field access on evddnodes[] - never alias BDD LOW/HIGH/LEVEL. */
@@ -94,10 +94,12 @@ typedef struct s_EvddNode {
     } while (0)
 #define EVDDHASREF(n) (evddnodes[n].refcou > 0)
 
-#define EVDDISCONST(a)    ((a) < 2)
-#define EVDDISNONCONST(a) ((a) >= 2)
+#define EVDDISCONST(a)    ((a) == EVDD_TRUE_NODE)
+#define EVDDISNONCONST(a) ((a) != EVDD_TRUE_NODE)
 #define EVDDISONE(a)      ((a) == EVDD_TRUE_NODE)
-#define EVDDISZERO(a)     ((a) == EVDD_FALSE_NODE)
+/** Zero diagram: edge to the 1-terminal with weight ZERO. */
+#define EVDDISFALSE(e)                                                         \
+    (EVDDISCONST((e).node) && evdd_value_is_zero((e).w))
 /** Free-list slots use low == -1 (same convention as BuDDy). */
 #define EVDDISFREE(n)     (EVDDLOW(n) == -1)
 

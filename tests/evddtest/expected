@@ -32,7 +32,7 @@ PASS: types_done resets counters
 PASS: new_type works after types_done
 
 == intern uniquing ==
-PASS: interned payload is not reserved 0/1
+PASS: interned payload is not bare ZERO
 PASS: equal values intern to the same id
 PASS: distinct values get distinct ids
 PASS: get returns stored int
@@ -40,9 +40,10 @@ PASS: get_type preserves type
 PASS: get_type on second value
 PASS: NULL intern maps to ZERO
 PASS: is_zero payload collapses to ZERO
-PASS: is_one payload collapses to ONE
+PASS: is_one payload stays typed and is_one
+PASS: typed ones uniquify
 PASS: get(ZERO) is NULL
-PASS: get(ONE) is NULL
+PASS: get(typed one) is non-NULL
 
 == intern types do not alias ==
 PASS: same payload, different type_ids, distinct ValueIDs
@@ -65,8 +66,8 @@ PASS: intern works again after value_done
 == is_zero / is_one ==
 PASS: ZERO is zero
 PASS: ZERO is not one
-PASS: ONE is one
-PASS: ONE is not zero
+PASS: typed ONE is one
+PASS: typed ONE is not zero
 PASS: typed 5 is neither zero nor one
 
 == algebra on ids ==
@@ -79,11 +80,16 @@ PASS: ZERO*x absorbs
 PASS: ZERO*ONE is ZERO
 PASS: add 2+3
 PASS: add ZERO is identity
+PASS: add ONE+typed
+PASS: add ONE+ONE
 PASS: sub 6-2
 PASS: sub x-x collapses to ZERO
+PASS: sub ZERO-typed
+PASS: sub ONE-ONE is ZERO
 PASS: div 6/2
 PASS: div by ONE is identity
 PASS: ZERO / x is ZERO
+PASS: div ONE/ONE is ONE
 Error: EVDD value division by zero
 PASS: div by ZERO is a hard error
 
@@ -166,13 +172,13 @@ PASS: evdd starts idle
 PASS: evdd_init succeeds
 PASS: evdd_isrunning after init
 PASS: table allocated at prime size
-PASS: freelist starts at 2 with size-2 free nodes
-PASS: sinks are pinned MAXREF
-PASS: sinks sit at MAXLEVEL
-PASS: sinks point to themselves
+PASS: freelist starts at 1 with size-1 free nodes
+PASS: 1-terminal is pinned MAXREF
+PASS: 1-terminal sits at MAXLEVEL
+PASS: 1-terminal points to itself
 PASS: first free slot has low==-1
-PASS: evdd_false is (0, ONE)
-PASS: evdd_true is (1, ONE)
+PASS: evdd_false is (TRUE, ZERO)
+PASS: evdd_const(typed 1) is (TRUE, one)
 PASS: second evdd_init without done errors
 PASS: evdd_done frees the table
 PASS: re-init after done works
@@ -180,7 +186,7 @@ PASS: evdd_init does not start bdd
 
 == makenode_raw ==
 PASS: makenode_raw: evdd_init
-PASS: raw returns (ONE, node>=2)
+PASS: raw returns (unit, node>=1)
 PASS: raw stores level and child node ids
 PASS: raw stores child edge weights on the node
 PASS: raw unique hit shares node
@@ -188,6 +194,7 @@ PASS: raw skip-reduces equal children to that edge
 PASS: eager skip-reduces equal children to that edge
 PASS: raw skip-reduce keeps common edge weight
 PASS: eager skip-reduce folds normalized incoming onto edge
+PASS: raw skip-reduce to false is canonical evdd_false
 PASS: raw keeps unnormalized weights and uniquifies them
 PASS: different outgoing weight => different node
 PASS: makenode weight-normalizes then calls raw
@@ -197,7 +204,7 @@ PASS: makenode and raw agree on normalized key
 == evdd_normalize ==
 PASS: normalize: evdd_init
 PASS: normalize false is false
-PASS: normalize true is true
+PASS: normalize unit const is unit
 PASS: normalize(raw) matches eager makenode (single node)
 PASS: normalize(raw DAG) matches eager makenode throughout
 PASS: normalize multiplies root incoming weight
@@ -211,7 +218,7 @@ PASS: diamond: shared child is the eager-normalized mid
 PASS: refs_gbc: evdd_init
 PASS: new nodes start with refcou 0
 PASS: addref bumps root refcou
-PASS: addref on sink is a no-op (stays MAXREF)
+PASS: addref on false edge is a no-op (terminal stays MAXREF)
 PASS: gbc frees unreachable node
 PASS: gbc keeps addref'd root
 PASS: gbc increases freelist
@@ -223,6 +230,7 @@ PASS: gbc frees node after last delref
 PASS: apply: evdd_init
 PASS: apply mul on TRUE edges multiplies weights
 PASS: apply add on TRUE edges adds weights
+PASS: apply(unit,unit,add) is true with weight 2
 PASS: apply mul with FALSE is FALSE
 PASS: apply cache returns same edge on second call
 PASS: apply mul: low path value is 0
@@ -239,7 +247,7 @@ PASS: X maps basis states onto each other (unique table)
 PASS: scalar mul 3|1> amplitudes (0,3)
 PASS: psi amplitudes (2,4)
 PASS: X|psi> swaps amplitudes
-PASS: X on q0 sends |10> to |00|-shaped node (high is FALSE)
+PASS: X on q0 sends |10> to |00|-shaped node (high weight 0)
 PASS: X|10> low cofactor is |0> on q1 with amp 1
 PASS: apply-add builds 2|0>+3|1>
 
@@ -252,8 +260,14 @@ PASS: dot: low edge dashed
 PASS: dot: high edge solid
 PASS: dot: level label on node
 PASS: dot: prints weight 4 on an edge
+PASS: dot: sole 1-terminal shown
 PASS: dot: second print after unmark
+PASS: dot hide0: digraph header
+PASS: dot hide0: high edge kept
+PASS: dot hide0: weight 4 kept
+PASS: dot hide0: no zero-weight low edge
+PASS: dot hide0: 1-terminal kept
 
 ----------------------------------------
-passed=190 failed=0
+passed=207 failed=0
 All tests passed.
