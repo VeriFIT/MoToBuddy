@@ -137,7 +137,7 @@ static void evdd_rehash(void)
     for (n = 0; n < evddnodesize; n++)
         evddnodes[n].hash = 0;
 
-    for (n = evddnodesize - 1; n >= 2; n--) {
+    for (n = evddnodesize - 1; n >= 1; n--) {
         unsigned int hash;
 
         if (EVDDISFREE(n))
