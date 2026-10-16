@@ -3,9 +3,10 @@
  * @brief Interned EVDD edge values and CUSTOM-style type registry.
  *
  * Analogous to terminal.h plus mtbddValues, but values sit on edges, not
- * only leaves. Intern row is (type_id, payload). ValueID 0 = absorb,
- * ValueID 1 = identity. Several type ids share one table (CUSTOM pattern).
- * One frozen normalization strategy per type_id. Mixed-type ops error.
+ * only leaves. Intern row is (type_id, payload). ValueID 0 = bare absorb
+ * only; identity is a typed intern (see is_one / evdd_value_unit). Several
+ * type ids share one table (CUSTOM pattern). One frozen normalization
+ * strategy per type_id. Mixed-type ops error.
  *
  * Algebra callbacks (mul, div, is_zero, …) belong here, not in the DD
  * unique table.
