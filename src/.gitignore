@@ -1,1 +1,3 @@
+# Generated into the source tree by older versions of src/CMakeLists.txt;
+# it is now buddy_config.h in the build directory.
 config.h

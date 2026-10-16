@@ -342,4 +342,11 @@ PASS: freeing pairs from the middle, front and back of the list
 PASS: pairs still work after freeing others
 PASS: freeing NULL is a no-op
 
-Summary: 307 passed, 0 failed
+== statistics ==
+PASS: repeated operation gives the same node
+PASS: sifting moved variables
+PASS: unique-table counters are consistent
+PASS: operator cache counters count exactly when statistics are compiled in
+PASS: swap counter counts exactly when statistics are compiled in
+
+Summary: 312 passed, 0 failed

@@ -1,4 +1,10 @@
-/* config.h.in.  Generated from configure.ac by autoheader.  */
+/* buddy_config.h.in: configured by CMake into the build directory as
+   buddy_config.h. It was originally generated from configure.ac by
+   autoheader.
+
+   The statistics switches CACHESTATS and SWAPCOUNT are not set here: with
+   BUDDY_STATS=ON, src/CMakeLists.txt defines them for every library source
+   file, since several (bddop.c, reorder.c) never include this header. */
 
 /* Define to 1 if you have the <dlfcn.h> header file. */
 #undef HAVE_DLFCN_H
@@ -62,10 +68,3 @@
 /* Define to the version of this package. */
 #undef PACKAGE_VERSION
 #define PACKAGE_VERSION "${PROJECT_VERSION}"
-
-/* Define to 1 to count number of fundamental variable swaps (for debugging). */
-#undef SWAPCOUNT
-
-/* Define to 1 to gather statistical information about operator and unique node
-   caching (for debugging). */
-#undef CACHESTATS
