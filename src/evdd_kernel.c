@@ -40,20 +40,17 @@ static void evdd_clear_table_state(void)
     evddrunning = 0;
 }
 
-EVDD evdd_false(void)
-{
-    EVDD e;
-    e.node = EVDD_FALSE_NODE;
-    e.w = EVDD_VALUE_ONE;
-    return e;
-}
-
-EVDD evdd_true(void)
+EVDD evdd_const(evdd_value_id w)
 {
     EVDD e;
     e.node = EVDD_TRUE_NODE;
-    e.w = EVDD_VALUE_ONE;
+    e.w = w;
     return e;
+}
+
+EVDD evdd_false(void)
+{
+    return evdd_const(EVDD_VALUE_ZERO);
 }
 
 int evdd_isrunning(void)
@@ -69,8 +66,8 @@ int evdd_init(int initnodesize)
     if (evddrunning)
         return bdd_error(BDD_RUNNING);
 
-    if (initnodesize < 3)
-        initnodesize = 3;
+    if (initnodesize < 2)
+        initnodesize = 2;
 
     size = bdd_prime_gte(initnodesize);
     evddnodes = (EvddNode *)calloc((size_t)size, sizeof(EvddNode));
@@ -85,29 +82,23 @@ int evdd_init(int initnodesize)
         evddnodes[n].mark = 0;
         EVDDLOW(n) = -1;
         EVDDHIGH(n) = 0;
-        EVDDWLOW(n) = EVDD_VALUE_ONE;
-        EVDDWHIGH(n) = EVDD_VALUE_ONE;
+        EVDDWLOW(n) = EVDD_VALUE_ZERO;
+        EVDDWHIGH(n) = EVDD_VALUE_ZERO;
         evddnodes[n].hash = 0;
         evddnodes[n].next = n + 1;
     }
     evddnodes[evddnodesize - 1].next = 0;
 
-    /* Pin sinks: 0 = zero, 1 = T1 (like bddfalse / bddtrue). */
-    evddnodes[EVDD_FALSE_NODE].refcou = EVDD_MAXREF;
+    /* Sole sink: 1-terminal. Zero is (TRUE, ZERO), not a second node. */
     evddnodes[EVDD_TRUE_NODE].refcou = EVDD_MAXREF;
-    EVDDLEVEL(EVDD_FALSE_NODE) = EVDD_MAXLEVEL;
     EVDDLEVEL(EVDD_TRUE_NODE) = EVDD_MAXLEVEL;
-    EVDDLOW(EVDD_FALSE_NODE) = EVDDHIGH(EVDD_FALSE_NODE) = EVDD_FALSE_NODE;
     EVDDLOW(EVDD_TRUE_NODE) = EVDDHIGH(EVDD_TRUE_NODE) = EVDD_TRUE_NODE;
-    EVDDWLOW(EVDD_FALSE_NODE) = EVDDWHIGH(EVDD_FALSE_NODE) = EVDD_VALUE_ONE;
-    EVDDWLOW(EVDD_TRUE_NODE) = EVDDWHIGH(EVDD_TRUE_NODE) = EVDD_VALUE_ONE;
-    evddnodes[EVDD_FALSE_NODE].hash = 0;
+    EVDDWLOW(EVDD_TRUE_NODE) = EVDDWHIGH(EVDD_TRUE_NODE) = EVDD_VALUE_ZERO;
     evddnodes[EVDD_TRUE_NODE].hash = 0;
-    evddnodes[EVDD_FALSE_NODE].next = 0;
     evddnodes[EVDD_TRUE_NODE].next = 0;
 
-    evddfreepos = 2;
-    evddfreenum = evddnodesize - 2;
+    evddfreepos = 1;
+    evddfreenum = evddnodesize - 1;
     evddproduced = 0;
     evddmaxnodesize = 0;
     evddrunning = 1;
@@ -196,8 +187,8 @@ static int evdd_noderesize(void)
         evddnodes[n].mark = 0;
         EVDDLOW(n) = -1;
         EVDDHIGH(n) = 0;
-        EVDDWLOW(n) = EVDD_VALUE_ONE;
-        EVDDWHIGH(n) = EVDD_VALUE_ONE;
+        EVDDWLOW(n) = EVDD_VALUE_ZERO;
+        EVDDWHIGH(n) = EVDD_VALUE_ZERO;
         evddnodes[n].hash = 0;
         evddnodes[n].next = n + 1;
     }
@@ -254,7 +245,7 @@ EVDD evdd_makenode_raw(unsigned int level, EVDD low, EVDD high)
             EVDDHIGH(res) == hchild && EVDDWLOW(res) == wl &&
             EVDDWHIGH(res) == wh) {
             out.node = res;
-            out.w = EVDD_VALUE_ONE;
+            out.w = evdd_value_unit_from_pair(wl, wh);
             return out;
         }
         res = evddnodes[res].next;
@@ -288,7 +279,7 @@ EVDD evdd_makenode_raw(unsigned int level, EVDD low, EVDD high)
     evddnodes[hash].hash = res;
 
     out.node = res;
-    out.w = EVDD_VALUE_ONE;
+    out.w = evdd_value_unit_from_pair(wl, wh);
     return out;
 }
 
@@ -300,23 +291,36 @@ typedef struct {
 static EVDD evdd_normalize_node(int node, EvddNormMemo *memo)
 {
     EVDD low_e, high_e, out;
+    int low_n, high_n;
 
-    // zero or one
     if (EVDDISCONST(node)) {
+        /* Caller must not rely on .w; const children are folded in the parent. */
         out.node = node;
-        out.w = EVDD_VALUE_ONE;
+        out.w = EVDD_VALUE_ZERO;
         return out;
     }
 
     if (memo[node].set)
         return memo[node].e;
 
-    low_e = evdd_normalize_node(EVDDLOW(node), memo);
-    high_e = evdd_normalize_node(EVDDHIGH(node), memo);
+    low_n = EVDDLOW(node);
+    high_n = EVDDHIGH(node);
 
-    /* Fold this node's outgoing weights with factors pulled from children. */
-    low_e.w = evdd_value_mul(EVDDWLOW(node), low_e.w);
-    high_e.w = evdd_value_mul(EVDDWHIGH(node), high_e.w);
+    if (EVDDISCONST(low_n)) {
+        low_e.node = low_n;
+        low_e.w = EVDDWLOW(node);
+    } else {
+        low_e = evdd_normalize_node(low_n, memo);
+        low_e.w = evdd_value_mul(EVDDWLOW(node), low_e.w);
+    }
+
+    if (EVDDISCONST(high_n)) {
+        high_e.node = high_n;
+        high_e.w = EVDDWHIGH(node);
+    } else {
+        high_e = evdd_normalize_node(high_n, memo);
+        high_e.w = evdd_value_mul(EVDDWHIGH(node), high_e.w);
+    }
 
     out = evdd_makenode(EVDDLEVEL(node), low_e, high_e);
     memo[node].e = out;
@@ -341,6 +345,9 @@ EVDD evdd_normalize(EVDD root)
         return evdd_false();
     }
 
+    if (EVDDISCONST(root.node))
+        return root;
+
     /* Memo only needs slots for nodes that existed when the walk started. */
     n = evddnodesize;
     memo = (EvddNormMemo *)calloc((size_t)n, sizeof(EvddNormMemo));
@@ -357,7 +364,7 @@ EVDD evdd_normalize(EVDD root)
 
 EVDD evdd_addref(EVDD root)
 {   
-   if (root.node < 2  ||  !evddrunning)
+   if (EVDDISCONST(root.node) || !evddrunning)
       return root;
    if (root.node >= evddnodesize)
    {
@@ -376,7 +383,7 @@ EVDD evdd_addref(EVDD root)
 
 EVDD evdd_delref(EVDD root)
 {   
-   if (root.node < 2  ||  !evddrunning)
+   if (EVDDISCONST(root.node) || !evddrunning)
       return root;
    if (root.node >= evddnodesize)
    {
@@ -397,7 +404,7 @@ static void evdd_mark(int i)
 {
     EvddNode *node;
 
-    if (i < 2)
+    if (EVDDISCONST(i))
         return;
 
     node = &evddnodes[i];
@@ -413,7 +420,7 @@ void evdd_unmark(int i)
 {
     EvddNode *node;
 
-    if (i < 2)
+    if (EVDDISCONST(i))
         return;
 
     node = &evddnodes[i];
@@ -432,7 +439,7 @@ void evdd_gbc(void)
     if (!evddrunning)
         return;
 
-    /* Mark from external roots. Sinks stay alive via MAXREF. */
+    /* Mark from external roots. Terminal stays alive via MAXREF. */
     for (n = 0; n < evddnodesize; n++) {
         if (evddnodes[n].refcou > 0)
             evdd_mark(n);
@@ -442,7 +449,7 @@ void evdd_gbc(void)
     evddfreepos = 0;
     evddfreenum = 0;
 
-    for (n = evddnodesize - 1; n >= 2; n--) {
+    for (n = evddnodesize - 1; n >= 1; n--) {
         EvddNode *node = &evddnodes[n];
 
         // marked and not free, keep in the table
@@ -460,8 +467,8 @@ void evdd_gbc(void)
         else {
             EVDDLOWp(node) = -1;
             EVDDHIGHp(node) = 0;
-            EVDDWLOWp(node) = EVDD_VALUE_ONE;
-            EVDDWHIGHp(node) = EVDD_VALUE_ONE;
+            EVDDWLOWp(node) = EVDD_VALUE_ZERO;
+            EVDDWHIGHp(node) = EVDD_VALUE_ZERO;
             EVDDLEVELp(node) = 0;
             node->refcou = 0;
             node->mark = 0;

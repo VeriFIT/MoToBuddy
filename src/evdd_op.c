@@ -139,10 +139,10 @@ int evdd_operator_resize(int cachesize)
  * Apply
  * ---------------------------------------------------------------------- */
 
-/** Path value of a constant edge: FALSE → 0, TRUE → incoming weight. */
+/** Path value of a constant edge: zero weight → 0, else incoming weight. */
 static evdd_value_id evdd_const_value(EVDD e)
 {
-    if (EVDDISZERO(e.node))
+    if (evdd_value_is_zero(e.w))
         return EVDD_VALUE_ZERO;
     return e.w;
 }
