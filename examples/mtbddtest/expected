@@ -79,6 +79,16 @@ PASS: cube2 returns an internal node at first var level
 PASS: terminal before done
 PASS: re-init after done works
 
+== initialisation modes ==
+PASS: bdd_done ended the earlier MTBDD sessions' mode
+PASS: after bdd_init, plain and MTBDD operations work together across collections
+PASS: bdd_done ends MTBDD mode
+PASS: bdd_init after an mtbdd_init session supports plain operations
+PASS: mtbdd_init during a running session fails with BDD_RUNNING and keeps the mode
+PASS: plain results stay correct across a collection in that session
+PASS: mtbdd_init during a running MTBDD session fails and keeps MTBDD mode
+PASS: a session without variables ends cleanly after one with variables
+
 == guarded variants ==
 PASS: apply_guarded_param adds param at the leaves
 PASS: apply_guarded_param result is stable (cache hit)
@@ -178,5 +188,5 @@ PASS: DOUBLEVAL: terminals rebuilt after garbage collection keep their values
 PASS: DOUBLEVAL: apply adds values along every path
 
 ----------------------------------------
-passed=121 failed=0 xfailed=0
+passed=129 failed=0 xfailed=0
 All tests passed.

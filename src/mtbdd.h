@@ -60,6 +60,36 @@ extern unsigned (*customHash)(void *);
 extern int (*customCompare)(void *, void *);
 extern void (*customFree)(void *);
 
+/* Initialises the package in MTBDD mode, for programs that only use MTBDD
+ * operations: like bdd_init(), but without the six operator caches of the
+ * plain BDD operations. Each of those has cs entries of 32 bytes, or
+ * nodes/r entries after bdd_setcacheratio(r): about 1.9 MB in all at
+ * cs = 10000. A program that also uses plain operations should call
+ * bdd_init() instead, which sets up the caches of both kinds. (Calling
+ * library operations from inside a callback passed to an MTBDD operation is
+ * not supported in either mode.)
+ *
+ * After mtbdd_init(), do not call plain operations that use an operator
+ * cache:
+ *   - bdd_apply and its wrappers (bdd_and, bdd_or, ...), bdd_not, bdd_ite,
+ *     bdd_exist/forall/unique, bdd_appex/appall/appuni, bdd_replace,
+ *     bdd_compose, bdd_veccompose, bdd_restrict, bdd_constrain,
+ *     bdd_simplify, bdd_satcount and its variants, bdd_pathcount,
+ *     bdd_buildcube, bdd_ibuildcube;
+ *   - bdd_makeset, bdd_load and bdd_fnload (bdd_save works);
+ *   - the C++ bdd operators, and the fdd and bvec functions built on the
+ *     above, such as fdd_extdomain, fdd_ithvar, bvec_add and the bvec
+ *     comparisons.
+ * When such a call reaches its cache, builds with assertions enabled stop
+ * with a message and other builds crash; a call that a trivial operand
+ * answers at once, such as bdd_and(x, bddtrue), returns without reaching it.
+ * The kernel functions that need no operator cache (variables, bdd_makenode,
+ * reference counting, garbage collection) work in both modes.
+ *
+ * Fails with BDD_RUNNING if the package is already running. MTBDD mode is
+ * the global flag mtbdd, which this function sets before calling bdd_init()
+ * (setting it by hand before bdd_init() is equivalent); bdd_done() and a
+ * failed mtbdd_init() clear it. */
 int mtbdd_init(int initnodesize, int cs);
 
 int mtbdd_findterminal(void *value, unsigned hash, mtbdd_terminal_type type);

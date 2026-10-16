@@ -185,7 +185,10 @@ int bdd_init(int initnodesize, int cs)
    bddnodesize = bdd_prime_gte(initnodesize);
    
    if ((bddnodes = calloc(1, sizeof(BddNode)*bddnodesize)) == NULL)
+   {
+      bddnodesize = 0;   /* or a later bdd_done() walks a table that does not exist */
       return bdd_error(BDD_MEMORY);
+   }
 
    bddresized = 0;
    
@@ -310,11 +313,12 @@ void bdd_done(void)
    mtbddmaxTerminalSize = 0;
    mtbddLastValueIndex = 0;
 
-   if (mtbdd) {
-      mtbdd_operator_done();
-   } else {
-      bdd_operator_done();
-   }
+      /* Both cache families, whatever the mode (freeing a cache that was
+         never allocated is a no-op), so nothing carries into the next
+         session. MTBDD mode lasts one session too: mtbdd_init() sets it
+         again, and a later bdd_init() must get the plain caches. */
+   bdd_operator_done();
+   mtbdd = 0;
 
    mtbdd_terminal_types_done();
 
@@ -1176,11 +1180,9 @@ void bdd_gbc(void)
       }
    }
 
-   if(mtbdd) {
-      mtbdd_operator_reset();
-   } else {
-      bdd_operator_reset();
-   }
+      /* Both cache families, whatever the mode: resetting a cache that was
+         never allocated only bumps its generation. */
+   bdd_operator_reset();
 
    c2 = clock();
    gbcclock += c2-c1;
