@@ -111,7 +111,7 @@ Follow MTBDD CUSTOM: several type ids share one unique table. The flag lives on 
 | Different `type_id`s, each with its own frozen normalization | **Yes** - max-magnitude on doubles, first-nonzero on exact, same `evddnodes` |
 | Apply / mul / makenode mixing two `type_id`s on one node | **No** - hard error (stricter than MTBDD apply, which only prints) |
 
-Weight-normalization strategy is set per `type_id` at registration and frozen until `evdd_done`. Translate walks the source, interns converted payloads under the destination `type_id`, then makenode so the destination strategy applies. ValueIDs 0 and 1 are untyped absorb/identity.
+Weight-normalization strategy is set per `type_id` at registration and frozen until `evdd_done`. Translate walks the source, interns converted payloads under the destination `type_id`, then makenode so the destination strategy applies. ValueID 0 is bare absorb only; identity is a typed intern (`is_one` / `evdd_value_unit`), not a reserved id.
 
 **Second manager.** Needed only if the same algebra must exist under two norms at once (double + L2 and double + max-magnitude). Out of scope: one type, one strategy.
 
@@ -135,7 +135,7 @@ Both kernels stay live in one process (existing 20-byte `bddnodes` plus `evddnod
 
 | Direction | Idea | Caveats |
 |---|---|---|
-| MTBDD → EVDD | Replace each valued leaf with an edge `(leaf_value, T1)`. Internal edges start as identity. Bottom-up makenode (or raw then `evdd_normalize`) applies that type's weight-normalization, so equal-up-to-scalar subvectors can merge. | Shape may shrink vs the MTBDD. Boolean 0/1 map to EVDD zero-sink / T1. |
+| MTBDD → EVDD | Replace each valued leaf with an edge `(leaf_value, T1)`. Internal edges start as identity. Bottom-up makenode (or raw then `evdd_normalize`) applies that type's weight-normalization, so equal-up-to-scalar subvectors can merge. | Shape may shrink vs the MTBDD. Boolean 0 maps to `(T1, ZERO)`; boolean 1 to `(T1, unit)`. |
 | EVDD → MTBDD | Multiply weights along each path; write the product as an MTBDD terminal. Incoming root weight scales every leaf. Skipped EVDD levels expand to both cofactors with the same subgraph if the MTBDD side needs an explicit node. | Node count can grow (no edge sharing of scalars). Mixed EVDD type ids are an error unless a value mapper is supplied. |
 
 API sketch: `mtbdd_to_evdd(BDD, type_id)` and `evdd_to_mtbdd(EVDD, type_id)`, cached like apply. Round-trip need not preserve node identity, only the function (path products equal leaf values).
