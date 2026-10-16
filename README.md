@@ -41,6 +41,16 @@ Each example directory carries a `runtest` script and (mostly) an `expected` out
 
 The MTBDD extension adds multi-terminal BDDs on top of the BuDDy kernel. Unlike standard BDDs whose leaves are always 0 or 1, MTBDDs carry arbitrary typed values at their leaves.
 
+### Initialisation
+
+`bdd_init(nodes, cache)` sets up everything, so a program can mix plain BDD operations (`bdd_and`, `bdd_exist`, `bdd_satcount`, ...) with MTBDD operations.
+
+`mtbdd_init(nodes, cache)` is a lighter variant for programs that only use MTBDD operations. It skips the six operator caches of the plain operations, each with `cache` entries of 32 bytes (or nodes/r entries after `bdd_setcacheratio(r)`): about 1.9 MB in all at `cache = 10000`.
+
+After `mtbdd_init`, plain operations that use an operator cache must not be called. These are the BDD operators, quantifiers and counting functions, `bdd_makeset`, `bdd_load`/`bdd_fnload`, and the `fdd` and `bvec` functions built on them; `src/mtbdd.h` lists them. When such a call reaches its cache, builds with assertions enabled stop with a message, and builds that define `NDEBUG` (`Release`, `RelWithDebInfo`, `MinSizeRel`) crash. A call that a trivial operand answers at once, such as `bdd_and(x, bddtrue)`, returns without reaching it, so the check does not catch every misuse. Kernel functions that need no operator cache (variables, `bdd_makenode`, reference counting, garbage collection) work in both modes.
+
+The mode lasts until `bdd_done()`. `mtbdd_init` fails with `BDD_RUNNING` while a session is running, like `bdd_init`. Calling library operations from inside a callback passed to an MTBDD operation is not supported (#10).
+
 ### Terminal Types
 
 Custom terminal types are registered at runtime:

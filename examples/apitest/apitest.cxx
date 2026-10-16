@@ -1159,6 +1159,24 @@ static void test_statistics() {
 }
 
 /* ------------------------------------------------------------------------=
+ * Sessions: bdd_done must leave nothing behind for the next session.
+ * ---------------------------------------------------------------------= */
+
+static void test_sessions() {
+    printf("\n== sessions ==\n");
+    bdd_init(1000, 100);
+    bdd_setvarnum(4);
+    bdd_done();
+    bdd_init(1000, 100);   /* a session that declares no variables */
+    bdd_done();
+    EXPECT(true, "a session without variables ends cleanly after one with variables");
+    bdd_init(1000, 100);
+    bdd_setvarnum(2);
+    EXPECT(bdd_varnum() == 2 && bdd_var(bdd_ithvar(1)) == 1, "the next session gets fresh variables");
+    bdd_done();
+}
+
+/* ------------------------------------------------------------------------=
  * Main
  * ---------------------------------------------------------------------= */
 
@@ -1176,6 +1194,7 @@ int main() {
     test_blocks_and_growth();
     test_c_entry_points();
     test_statistics();
+    test_sessions();
 
     printf("\nSummary: %d passed, %d failed\n", g_passed, g_failed);
     return g_failed == 0 ? 0 : 1;

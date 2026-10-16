@@ -81,8 +81,16 @@ static BDD mtbdd_leaf_result(void *value, mtbdd_terminal_type type,
 }
 
 int mtbdd_init(int initnodesize, int cs) {
+   /* Checked here because the flag must not change while a session runs:
+      bdd_init() would refuse the call, but a session started with bdd_init()
+      would then continue in MTBDD mode. */
+   if (bddrunning)
+      return bdd_error(BDD_RUNNING);
    mtbdd = 1;
-   return bdd_init(initnodesize, cs);
+   int err = bdd_init(initnodesize, cs);
+   if (err < 0)
+      mtbdd = 0;   /* bdd_init can fail before reaching bdd_done(), which clears it */
+   return err;
 }
 
 
