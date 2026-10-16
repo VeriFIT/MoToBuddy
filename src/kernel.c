@@ -300,6 +300,10 @@ void bdd_done(void)
    bddrefstacktop = NULL;
    bddrefstackend = NULL;
    bddvarset = NULL;
+      /* A later session that never calls bdd_setvarnum() would otherwise
+         free these again in its bdd_done(). */
+   bddvar2level = NULL;
+   bddlevel2var = NULL;
    mtbddterminalVals.doubleValues = NULL;
    mtbddterminalVals.top = NULL;
    mtbddTerminalUsed = 0;

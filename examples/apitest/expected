@@ -349,4 +349,8 @@ PASS: unique-table counters are consistent
 PASS: operator cache counters count exactly when statistics are compiled in
 PASS: swap counter counts exactly when statistics are compiled in
 
-Summary: 312 passed, 0 failed
+== sessions ==
+PASS: a session without variables ends cleanly after one with variables
+PASS: the next session gets fresh variables
+
+Summary: 314 passed, 0 failed
