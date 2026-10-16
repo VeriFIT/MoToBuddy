@@ -46,21 +46,47 @@ typedef struct s_EvddNode {
 #define EVDD_MAXLEVEL 0x1FFFFF
 #define EVDD_MAXREF   0x3FF
 
-/* Hash mix (same formulas as BuDDy PAIR/TRIPLE; do not include kernel.h). */
-#define EVDD_PAIR(a, b)                                                        \
-    ((unsigned int)((((unsigned int)(a)) + ((unsigned int)(b))) *              \
-                        (((unsigned int)(a)) + ((unsigned int)(b)) + 1u) / 2u + \
-                    ((unsigned int)(a))))
-#define EVDD_TRIPLE(a, b, c)                                                   \
-    ((unsigned int)(EVDD_PAIR((unsigned int)(c), EVDD_PAIR((a), (b)))))
+/*
+ * Same multiplicative mix and Lemire range reduction as kernel.h HASH_* /
+ * HASHNODE / HASHRANGE. Duplicated (not via kernel.h) because bddio.c can
+ * include both headers; reuse the shared names when kernel.h already did.
+ */
+#ifndef HASH_K0
+#define HASH_K0 0xC13FA9A99E3779B9ULL
+#define HASH_K1 0x91E10DA5C79E7B1DULL
+#define HASH_K2 0xC2B2AE3D27D4EB4FULL
+#define HASH_W2(a, b)                                                          \
+    ((((unsigned long long)(unsigned int)(a)) << 32) | (unsigned int)(b))
+#define HASH_FOLD(x) ((unsigned int)(((x) ^ ((x) << 32)) >> 32))
+#define HASH1(a) ((unsigned int)(a) * (unsigned int)HASH_K0)
+#define HASH2(a, b) HASH_FOLD(HASH_W2(a, b) * HASH_K0)
+#define HASH3(a, b, c)                                                         \
+    HASH_FOLD(HASH_W2(a, b) * HASH_K0 + (unsigned int)(c) * HASH_K1)
+#define HASH4(a, b, c, d)                                                      \
+    HASH_FOLD(HASH_W2(a, b) * HASH_K0 + HASH_W2(c, d) * HASH_K2)
+#define HASH5(a, b, c, d, e)                                                   \
+    HASH_FOLD(HASH_W2(a, b) * HASH_K0 + (unsigned int)(c) * HASH_K1 +          \
+              HASH_W2(d, e) * HASH_K2)
+#define HASHNODE(lvl, l, h)                                                    \
+    ((unsigned int)(((HASH_W2(l, h) ^ (unsigned int)(lvl) * HASH_K1) *          \
+                     HASH_K0) >>                                               \
+                    32))
+#endif
+#ifndef HASHRANGE
+#define HASHRANGE(h, n)                                                        \
+    ((unsigned int)(((unsigned long long)(unsigned int)(h) *                   \
+                     (unsigned int)(n)) >>                                     \
+                    32))
+#endif
+
+/** Mix for unique key (level, low, high, w_low, w_high) - HASHNODE + weights. */
+#define EVDD_HASHNODE(lvl, l, h, wl, wh)                                       \
+    HASH_FOLD((HASH_W2(l, h) ^ (unsigned int)(lvl) * HASH_K1) * HASH_K0 +      \
+              HASH_W2(wl, wh) * HASH_K2)
 
 /** Unique-table bucket for key (level, low, high, w_low, w_high). */
 #define EVDD_NODEHASH(lvl, l, h, wl, wh)                                       \
-    ((((EVDD_PAIR(EVDD_TRIPLE((lvl), (l), (h)),                                \
-                  EVDD_PAIR((unsigned int)(wl), (unsigned int)(wh)))) %        \
-       (unsigned int)evddnodesize) +                                           \
-      1u) %                                                                    \
-     (unsigned int)evddnodesize)
+    HASHRANGE(EVDD_HASHNODE(lvl, l, h, wl, wh), evddnodesize)
 
 /* Field access on evddnodes[] - never alias BDD LOW/HIGH/LEVEL. */
 #define EVDDLEVEL(n)   (evddnodes[n].level)

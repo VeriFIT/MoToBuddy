@@ -165,12 +165,8 @@ static EVDD evdd_edge_high(EVDD e)
 
 static unsigned int evdd_apply_hash(EVDD a, EVDD b, evdd_apply_op op)
 {
-    unsigned int h =
-        EVDD_TRIPLE((unsigned)a.node, (unsigned)b.node,
-                    (unsigned)(size_t)op);
-    h = EVDD_PAIR(h, (unsigned)a.w);
-    h = EVDD_PAIR(h, (unsigned)b.w);
-    return h;
+    return HASH5((unsigned)a.node, (unsigned)b.node, (unsigned)(size_t)op,
+                 (unsigned)a.w, (unsigned)b.w);
 }
 
 static EVDD evdd_apply_rec(EVDD a, EVDD b, evdd_apply_op op)
