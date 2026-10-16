@@ -50,8 +50,17 @@ void EvddCache_done(EvddCache *cache);
 int  EvddCache_resize(EvddCache *cache, int newsize);
 void EvddCache_reset(EvddCache *cache);
 
+/* Lemire range reduction (same as kernel.h / cache.h). */
+#ifndef HASHRANGE
+#define HASHRANGE(h, n)                                                        \
+    ((unsigned int)(((unsigned long long)(unsigned int)(h) *                   \
+                     (unsigned int)(n)) >>                                     \
+                    32))
+#endif
+
+/* hash from HASH5 (or equivalent); HASHRANGE does no extra mixing. */
 #define EvddCache_lookup(cache, hash)                                          \
-    (&(cache)->table[(hash) % (unsigned)(cache)->tablesize])
+    (&(cache)->table[HASHRANGE((hash), (cache)->tablesize)])
 
 #define EvddCache_is_valid(cache, entry)                                       \
     ((entry)->generation == (cache)->current_generation)
