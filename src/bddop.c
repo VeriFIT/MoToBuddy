@@ -40,6 +40,19 @@
 #include <time.h>
 #include <assert.h>
 
+/* The operator caches of the plain BDD operations exist only in sessions
+   started with bdd_init(). MTBDD mode (mtbdd_init(), or the mtbdd flag set
+   before bdd_init()) never allocates or resizes them, so their tables stay
+   NULL, and a plain operation reaching one would index a NULL table; with
+   assertions enabled it stops here with a message instead. Release builds
+   define NDEBUG and do not check. Wherever the tables exist they are reset
+   by every garbage collection and freed by bdd_done(), whatever the mode. */
+#define PLAIN_CACHE_LOOKUP(cache, hash)                                      \
+   (assert((cache)->table != NULL &&                                         \
+           "plain BDD operations are not available in MTBDD mode; "          \
+           "start the session with bdd_init() instead of mtbdd_init()"),     \
+    BddCache_lookup(cache, hash))
+
 #include "kernel.h"
 #include "cache.h"
 #include "mtbdd_cache_registry.h"
@@ -378,7 +391,14 @@ int bdd_setcacheratio(int r)
 static void checkresize(void)
 {
    if (bddresized)
-      bdd_operator_noderesize();
+   {
+         /* Like bdd_setcacheratio: MTBDD mode has no plain caches, and
+            resizing would allocate them, behind PLAIN_CACHE_LOOKUP's back. */
+      if (mtbdd)
+         mtbdd_operator_noderesize();
+      else
+         bdd_operator_noderesize();
+   }
    bddresized = 0;
 }
 
@@ -518,7 +538,7 @@ static BDD not_rec(BDD r)
    if (ISONE(r))
       return BDDZERO;
    
-   entry = BddCache_lookup(&applycache, NOTHASH(r));
+   entry = PLAIN_CACHE_LOOKUP(&applycache, NOTHASH(r));
       
    if (BddCache_is_valid(&applycache, entry)  &&  entry->a == r  &&  entry->c == bddop_not)
    {
@@ -680,7 +700,7 @@ static BDD apply_rec(BDD l, BDD r)
       res = oprres[applyop][l<<1 | r];
    else
    {
-      entry = BddCache_lookup(&applycache, APPLYHASH(l,r,applyop));
+      entry = PLAIN_CACHE_LOOKUP(&applycache, APPLYHASH(l,r,applyop));
       
       if (BddCache_is_valid(&applycache, entry)  &&  entry->a == l  &&  entry->b == r  &&  entry->c == applyop)
       {
@@ -866,7 +886,7 @@ static BDD ite_rec(BDD f, BDD g, BDD h)
    if (ISZERO(g) && ISONE(h))
       return not_rec(f);
 
-   entry = BddCache_lookup(&itecache, ITEHASH(f,g,h));
+   entry = PLAIN_CACHE_LOOKUP(&itecache, ITEHASH(f,g,h));
    if (BddCache_is_valid(&itecache, entry)  &&  entry->a == f  &&  entry->b == g  &&  entry->c == h)
    {
 #ifdef CACHESTATS
@@ -1034,7 +1054,7 @@ static int restrict_rec(int r)
    if (ISCONST(r)  ||  LEVEL(r) > quantlast)
       return r;
 
-   entry = BddCache_lookup(&misccache, RESTRHASH(r,miscid));
+   entry = PLAIN_CACHE_LOOKUP(&misccache, RESTRHASH(r,miscid));
    if (BddCache_is_valid(&misccache, entry)  &&  entry->a == r  &&  entry->c == miscid)
    {
 #ifdef CACHESTATS
@@ -1130,7 +1150,7 @@ static BDD constrain_rec(BDD f, BDD c)
    if (ISZERO(c))
       return BDDZERO;
 
-   entry = BddCache_lookup(&misccache, CONSTRAINHASH(f,c));
+   entry = PLAIN_CACHE_LOOKUP(&misccache, CONSTRAINHASH(f,c));
    if (BddCache_is_valid(&misccache, entry)  &&  entry->a == f  &&  entry->b == c  &&  entry->c == miscid)
    {
 #ifdef CACHESTATS
@@ -1246,7 +1266,7 @@ static BDD replace_rec(BDD r)
    if (ISCONST(r)  ||  LEVEL(r) > replacelast)
       return r;
 
-   entry = BddCache_lookup(&replacecache, REPLACEHASH(r));
+   entry = PLAIN_CACHE_LOOKUP(&replacecache, REPLACEHASH(r));
    if (BddCache_is_valid(&replacecache, entry)  &&  entry->a == r  &&  entry->c == replaceid)
    {
 #ifdef CACHESTATS
@@ -1371,7 +1391,7 @@ static BDD compose_rec(BDD f, BDD g)
    if (LEVEL(f) > composelevel)
       return f;
 
-   entry = BddCache_lookup(&replacecache, COMPOSEHASH(f,g));
+   entry = PLAIN_CACHE_LOOKUP(&replacecache, COMPOSEHASH(f,g));
    if (BddCache_is_valid(&replacecache, entry)  &&  entry->a == f  &&  entry->b == g  &&  entry->c == replaceid)
    {
 #ifdef CACHESTATS
@@ -1485,7 +1505,7 @@ static BDD veccompose_rec(BDD f)
    if (LEVEL(f) > replacelast)
       return f;
    
-   entry = BddCache_lookup(&replacecache, VECCOMPOSEHASH(f));
+   entry = PLAIN_CACHE_LOOKUP(&replacecache, VECCOMPOSEHASH(f));
    if (BddCache_is_valid(&replacecache, entry)  &&  entry->a == f  &&  entry->c == replaceid)
    {
 #ifdef CACHESTATS
@@ -1571,7 +1591,7 @@ static BDD simplify_rec(BDD f, BDD d)
    if (ISZERO(d))
       return BDDZERO;
 
-   entry = BddCache_lookup(&applycache, APPLYHASH(f,d,bddop_simplify));
+   entry = PLAIN_CACHE_LOOKUP(&applycache, APPLYHASH(f,d,bddop_simplify));
    
    if (BddCache_is_valid(&applycache, entry)  &&  entry->a == f  &&  entry->b == d  &&  entry->c == bddop_simplify)
    {
@@ -1789,7 +1809,7 @@ static int quant_rec(int r)
    if (r < 2  ||  LEVEL(r) > quantlast)
       return r;
 
-   entry = BddCache_lookup(&quantcache, QUANTHASH(r));
+   entry = PLAIN_CACHE_LOOKUP(&quantcache, QUANTHASH(r));
    if (BddCache_is_valid(&quantcache, entry)  &&  entry->a == r  &&  entry->c == quantid)
    {
 #ifdef CACHESTATS
@@ -2078,7 +2098,7 @@ static int appquant_rec(int l, int r)
    }
    else
    {
-      entry = BddCache_lookup(&appexcache, APPEXHASH(l,r,appexop));
+      entry = PLAIN_CACHE_LOOKUP(&appexcache, APPEXHASH(l,r,appexop));
       if (BddCache_is_valid(&appexcache, entry)  &&  entry->a == l  &&  entry->b == r  &&  entry->c == appexid)
       {
 #ifdef CACHESTATS
@@ -2593,7 +2613,7 @@ static double satcount_rec(int root)
    if (root < 2)
       return root;
 
-   entry = BddCache_lookup(&misccache, SATCOUHASH(root));
+   entry = PLAIN_CACHE_LOOKUP(&misccache, SATCOUHASH(root));
    if (BddCache_is_valid(&misccache, entry)  &&  entry->a == root  &&  entry->c == miscid)
       return entry->r.dres;
 
@@ -2680,7 +2700,7 @@ static double satcountln_rec(int root)
    if (root == 1)
       return 0.0;
 
-   entry = BddCache_lookup(&misccache, SATCOUHASH(root));
+   entry = PLAIN_CACHE_LOOKUP(&misccache, SATCOUHASH(root));
    if (BddCache_is_valid(&misccache, entry)  &&  entry->a == root  &&  entry->c == miscid)
       return entry->r.dres;
 
@@ -2847,7 +2867,7 @@ static double bdd_pathcount_rec(BDD r)
    if (ISONE(r))
       return 1.0;
 
-   entry = BddCache_lookup(&misccache, PATHCOUHASH(r));
+   entry = PLAIN_CACHE_LOOKUP(&misccache, PATHCOUHASH(r));
    if (BddCache_is_valid(&misccache, entry)  &&  entry->a == r  &&  entry->c == miscid)
       return entry->r.dres;
 

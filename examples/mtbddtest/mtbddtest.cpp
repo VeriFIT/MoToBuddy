@@ -15,6 +15,28 @@
 #include <cstring>
 #include <string>
 #include <vector>
+#if !defined(_WIN32)
+#include <cerrno>
+#include <csignal>
+#include <fcntl.h>
+#include <sys/resource.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#ifdef __linux__
+#include <sys/prctl.h>
+#endif
+#endif
+
+/* Sanitizers reserve huge shadow mappings, so a capped address space
+ * breaks them. */
+#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
+#define UNDER_SANITIZER 1
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer) || \
+    __has_feature(memory_sanitizer)
+#define UNDER_SANITIZER 1
+#endif
+#endif
 
 #include "bdd.h"
 #include "mtbddop.h"
@@ -1250,6 +1272,373 @@ static void test_all_domains() {
     check_domain<double>(DOUBLEVAL, "DOUBLEVAL", 0.25, -0.0);
 }
 
+/* ------------------------------------------------------------------------=
+ * Initialisation modes: bdd_init supports plain and MTBDD operations,
+ * mtbdd_init only MTBDD ones, and the mode ends with bdd_done.
+ * ---------------------------------------------------------------------= */
+
+#if !defined(_WIN32)
+/* Children end through exit(), even after a failed assertion, so that a
+ * coverage build writes their counters (gcov does so at exit; abort() and
+ * _exit() skip it). The exit status still tells an abort from a return. */
+static void exit_on_abort(int) {
+    exit(128 + SIGABRT);
+}
+
+struct ChildResult {
+    enum { NOT_STARTED, WAITED, WAIT_FAILED } state;
+    int status;        /* waitpid status, when WAITED */
+    std::string err;   /* what the child wrote to stderr (first 8 KiB) */
+};
+
+/* Runs fn in a child process with stdout discarded and stderr captured.
+ * The child's coverage counters are written whether it returns, exits or
+ * aborts. */
+static ChildResult run_in_child(void (*fn)(void)) {
+    ChildResult res{ChildResult::NOT_STARTED, 0, ""};
+    int err[2];
+    if (pipe(err) != 0)
+        return res;
+    /* An ignored SIGCHLD (inherited across exec) would make the kernel reap
+     * the child, and waitpid fail. */
+    struct sigaction dfl, old;
+    memset(&dfl, 0, sizeof dfl);
+    dfl.sa_handler = SIG_DFL;
+    sigemptyset(&dfl.sa_mask);
+    sigaction(SIGCHLD, &dfl, &old);
+    fflush(stdout);
+    fflush(stderr);
+    pid_t pid = fork();
+    if (pid < 0) {
+        close(err[0]);
+        close(err[1]);
+        sigaction(SIGCHLD, &old, nullptr);
+        return res;
+    }
+    if (pid == 0) {
+#ifdef __linux__
+        prctl(PR_SET_DUMPABLE, 0);   /* no core dump or crash report for a deliberate abort */
+#endif
+        signal(SIGABRT, exit_on_abort);
+        close(err[0]);
+        if (err[1] != 2) {           /* pipe() may return fd 2 itself if stderr was closed */
+            dup2(err[1], 2);
+            close(err[1]);
+        }
+        int devnull = open("/dev/null", O_WRONLY);   /* keep the child's output out of the result */
+        if (devnull >= 0 && devnull != 1) {
+            dup2(devnull, 1);
+            close(devnull);
+        }
+        fn();
+        exit(0);
+    }
+    close(err[1]);
+    char buf[8192];
+    size_t got = 0;
+    for (;;) {
+        ssize_t n = read(err[0], buf + got, sizeof buf - 1 - got);
+        if (n > 0) {
+            got += (size_t)n;
+            if (got == sizeof buf - 1)
+                break;
+        } else if (n < 0 && errno == EINTR) {
+            continue;
+        } else {
+            break;
+        }
+    }
+    buf[got] = 0;
+    close(err[0]);
+    pid_t w;
+    while ((w = waitpid(pid, &res.status, 0)) < 0 && errno == EINTR)
+        ;
+    sigaction(SIGCHLD, &old, nullptr);
+    res.state = (w == pid) ? ChildResult::WAITED : ChildResult::WAIT_FAILED;
+    res.err = buf;
+    return res;
+}
+
+/* Child: a failed mtbdd_init must leave neither MTBDD mode nor a stale
+ * table size behind. The address space is capped so that the 2 GB node
+ * table cannot be allocated. Exits non-zero on any wrong step. */
+static void failed_mtbdd_init_child() {
+    struct rlimit cap = {1UL << 30, 1UL << 30};
+    if (setrlimit(RLIMIT_AS, &cap) != 0)
+        exit(0);                     /* cannot cap: nothing to check */
+    bdd_error_hook(record_mtbdd_error);
+    int rc = mtbdd_init(100000000, 100);
+    if (rc == 0)
+        exit(0);                     /* the cap did not bite: nothing to check */
+    bool ok = rc == BDD_MEMORY && mtbdd == 0 && !bdd_isrunning();
+    bdd_done();                      /* used to walk a NULL node table */
+    ok = ok && bdd_init(1000, 100) == 0 && mtbdd == 0;
+    bdd_setvarnum(2);
+    ok = ok && bdd_and(bdd_ithvar(0), bdd_ithvar(1)).id() == bdd_makenode(0, 0, bdd_ithvar(1).id());
+    bdd_done();
+    exit(ok ? 0 : 1);
+}
+#endif
+
+#if !defined(NDEBUG) && !defined(_WIN32)
+static const char kExpectAssert[] = "<<the next call must stop at the assertion>>";
+
+/* Written by a scenario just before the one call that must stop, so that an
+ * earlier call stopping instead does not count. */
+static void mark_expected_assert() {
+    fputs(kExpectAssert, stderr);
+    fflush(stderr);
+}
+
+/* Reports a FAIL unless scenario, run in a child process, stops at the
+ * plain-cache assertion, with its message, after mark_expected_assert().
+ * Silent when it does, and when the child cannot be started, so the output
+ * is the same whether or not this build has assertions. The library and
+ * this test are built with the same flags, so NDEBUG here is NDEBUG there. */
+static void expect_plain_cache_assert(const char *what, void (*scenario)(void)) {
+    ChildResult r = run_in_child(scenario);
+    if (r.state == ChildResult::NOT_STARTED)
+        return;
+    if (r.state == ChildResult::WAIT_FAILED) {
+        printf("FAIL: %s (could not wait for the child)\n", what);
+        ++g_failed;
+        return;
+    }
+    /* Anything but a normal exit with status 0 counts as stopped: the abort
+     * handler exits with 128 + SIGABRT, and a sanitizer that handles the
+     * abort itself exits with an error of its own. */
+    bool stopped = !(WIFEXITED(r.status) && WEXITSTATUS(r.status) == 0);
+    size_t mark = r.err.find(kExpectAssert);
+    bool message = mark != std::string::npos &&
+                   r.err.find("plain BDD operations are not available in MTBDD mode", mark) !=
+                       std::string::npos;
+    if (!stopped || !message) {
+        printf("FAIL: %s (stopped=%d, message=%d)\n", what, stopped, message);
+        ++g_failed;
+    }
+}
+
+static void plain_op_after_mtbdd_init() {
+    mtbdd_init(1000, 100);
+    bdd_gbc_hook(NULL);
+    bdd_setvarnum(2);
+    mark_expected_assert();
+    bdd_and(bdd_ithvar(0), bdd_ithvar(1));
+}
+
+/* One scenario per plain operator cache: each starts an MTBDD session and
+ * calls an operation that reaches that cache, with operands built by
+ * bdd_makenode alone so that nothing before it touches a plain cache. */
+static BDD x0_and_x1() {   /* x0 & x1 */
+    return bdd_makenode(0, 0, bdd_makenode(1, 0, 1));
+}
+
+static void start_mtbdd_session() {
+    mtbdd_init(1000, 100);
+    bdd_gbc_hook(NULL);
+    bdd_setvarnum(4);
+}
+
+struct CacheScenario {
+    const char *what;
+    void (*fn)(void);
+};
+
+static const CacheScenario kCacheScenarios[] = {
+    {"bdd_not stops at the assertion (apply cache)",
+     [] { start_mtbdd_session(); mark_expected_assert(); bdd_not(bdd_ithvar(0).id()); }},
+    {"bdd_ite stops at the assertion (ite cache)",
+     [] { start_mtbdd_session(); mark_expected_assert();
+          bdd_ite(bdd_ithvar(0).id(), bdd_ithvar(1).id(), bdd_ithvar(2).id()); }},
+    {"bdd_restrict stops at the assertion (misc cache)",
+     [] { start_mtbdd_session(); BDD f = x0_and_x1(); mark_expected_assert();
+          bdd_restrict(f, bdd_ithvar(0).id()); }},
+    {"bdd_constrain stops at the assertion (misc cache)",
+     [] { start_mtbdd_session(); BDD f = x0_and_x1(); mark_expected_assert();
+          bdd_constrain(f, bdd_ithvar(1).id()); }},
+    {"bdd_simplify stops at the assertion (apply cache)",
+     [] { start_mtbdd_session(); BDD f = x0_and_x1(); mark_expected_assert();
+          bdd_simplify(f, bdd_ithvar(1).id()); }},
+    {"bdd_replace stops at the assertion (replace cache)",
+     [] { start_mtbdd_session(); BDD f = x0_and_x1(); bddPair *p = bdd_newpair();
+          bdd_setpair(p, 0, 2); mark_expected_assert(); bdd_replace(f, p); }},
+    {"bdd_compose stops at the assertion (replace cache)",
+     [] { start_mtbdd_session(); BDD f = x0_and_x1(); mark_expected_assert();
+          bdd_compose(f, bdd_ithvar(2).id(), 0); }},
+    {"bdd_veccompose stops at the assertion (replace cache)",
+     [] { start_mtbdd_session(); BDD f = x0_and_x1(); bddPair *p = bdd_newpair();
+          bdd_setbddpair(p, 0, bdd_ithvar(2).id()); mark_expected_assert(); bdd_veccompose(f, p); }},
+    {"bdd_exist stops at the assertion (quantification cache)",
+     [] { start_mtbdd_session(); BDD f = x0_and_x1(); mark_expected_assert();
+          bdd_exist(f, bdd_ithvar(0).id()); }},
+    {"bdd_appex stops at the assertion (appex cache)",
+     [] { start_mtbdd_session(); BDD f = x0_and_x1(); mark_expected_assert();
+          bdd_appex(f, bdd_ithvar(1).id(), bddop_and, bdd_ithvar(0).id()); }},
+    {"bdd_satcount stops at the assertion (misc cache)",
+     [] { start_mtbdd_session(); BDD f = x0_and_x1(); mark_expected_assert(); bdd_satcount(f); }},
+    {"bdd_satcountln stops at the assertion (misc cache)",
+     [] { start_mtbdd_session(); BDD f = x0_and_x1(); mark_expected_assert(); bdd_satcountln(f); }},
+    {"bdd_pathcount stops at the assertion (misc cache)",
+     [] { start_mtbdd_session(); BDD f = x0_and_x1(); mark_expected_assert(); bdd_pathcount(f); }},
+};
+
+/* With a cache ratio set and a grown node table, plain calls that never
+ * reach a cache (bdd_satone, a trivial bdd_and) used to allocate the plain
+ * caches on their way out, after which the assertion no longer fired and
+ * garbage collection did not reset those caches. */
+static void cache_free_calls_then_plain_op() {
+    mtbdd_init(10, 100);
+    bdd_gbc_hook(NULL);
+    bdd_setcacheratio(4);
+    bdd_setvarnum(20);
+    bdd_satone(bdd_ithvar(0));
+    bdd_and(bdd_ithvar(0), bddtrue);
+    mark_expected_assert();
+    bdd_and(bdd_ithvar(2), bdd_ithvar(3));
+}
+
+/* ... and the caches allocated that way carried into the next session. */
+static void plain_op_in_next_mtbdd_session() {
+    mtbdd_init(10, 100);
+    bdd_gbc_hook(NULL);
+    bdd_setcacheratio(4);
+    bdd_setvarnum(20);
+    bdd_satone(bdd_ithvar(0));
+    bdd_and(bdd_ithvar(0), bddtrue);
+    bdd_done();
+    mtbdd_init(1000, 100);
+    bdd_gbc_hook(NULL);
+    bdd_setvarnum(4);
+    mark_expected_assert();
+    bdd_and(bdd_ithvar(2), bdd_ithvar(3));
+}
+#endif
+
+/* x_x & x_y, checked node by node. */
+static bool is_and_of(const bdd &r, int x, int y) {
+    return r != bddtrue && r != bddfalse && bdd_var(r) == x && bdd_low(r) == bddfalse &&
+           bdd_high(r) != bddtrue && bdd_high(r) != bddfalse && bdd_var(bdd_high(r)) == y &&
+           bdd_low(bdd_high(r)) == bddfalse && bdd_high(bdd_high(r)) == bddtrue;
+}
+
+static void test_init_modes() {
+    printf("\n== initialisation modes ==\n");
+
+    /* Every earlier section ended its mtbdd_init session with bdd_done. If
+     * that left MTBDD mode on, the plain calls below would crash the suite,
+     * so report it and skip the section instead. */
+    EXPECT(mtbdd == 0, "bdd_done ended the earlier MTBDD sessions' mode");
+    if (mtbdd != 0)
+        return;
+
+    /* A program that mixes both kinds of operations calls bdd_init. */
+    bdd_init(1000, 100);
+    bdd_gbc_hook(NULL);
+    bdd_setvarnum(4);
+    SETDOMAIN(CUSTOM);
+    unsigned t = mtbdd_new_terminal_type();
+    mtbdd_register_compare_function(t, int_cmp);
+    mtbdd_register_hash_function(t, int_hash);
+    bool ok = true;
+    for (int round = 0; round < 200 && ok; ++round) {
+        /* Variable nodes are permanently referenced, so their raw ids stay valid. */
+        BDD a = bdd_ithvar(0).id(), b = bdd_ithvar(1).id(), c = bdd_ithvar(2).id(),
+            d = bdd_ithvar(3).id();
+        BDD f = bdd_addref(bdd_or(bdd_and(a, b), bdd_xor(c, d)));
+        BDD l = bdd_addref(bdd_makenode(0, mtbdd_maketerminal(box_int(round), t),
+                                        mtbdd_maketerminal(box_int(1000 + round), t)));
+        BDD sum = bdd_addref(mtbdd_apply(l, l, op_add));
+        ok = bdd_satcount(f) == 10.0 && leaf_int(LOW(sum)) == 2 * round &&
+             leaf_int(HIGH(sum)) == 2 * (1000 + round);
+        bdd_delref(f);
+        bdd_delref(l);
+        bdd_delref(sum);
+        if (round % 50 == 49)
+            bdd_gbc();
+    }
+    EXPECT(ok, "after bdd_init, plain and MTBDD operations work together across collections");
+    bdd_done();
+
+    /* An mtbdd_init session must not leave the next session in MTBDD mode.
+     * The plain call only runs if the flag was cleared, so a regression shows
+     * up as a FAIL line rather than a crash of the whole suite. */
+    mtbdd_init(1000, 100);
+    bdd_setvarnum(2);
+    bdd_done();
+    EXPECT(mtbdd == 0, "bdd_done ends MTBDD mode");
+    if (mtbdd == 0) {
+        bdd_init(1000, 100);
+        bdd_setvarnum(2);
+        EXPECT(bdd_and(bdd_ithvar(0), bdd_ithvar(1)).id() == bdd_makenode(0, 0, bdd_ithvar(1).id()),
+               "bdd_init after an mtbdd_init session supports plain operations");
+        bdd_done();
+    }
+
+    /* A refused mtbdd_init must not switch a running plain session to MTBDD
+     * mode, where garbage collection used to stop resetting the plain caches:
+     * a freed result's node id, reused by another node, then came back from
+     * the cache as the answer to the same operation. */
+    bdd_init(1000, 100);
+    bdd_gbc_hook(NULL);
+    bdd_error_hook(record_mtbdd_error);
+    bdd_setvarnum(20);
+    g_mtbdd_error = 0;
+    int rc = mtbdd_init(1000, 100);
+    EXPECT(rc == BDD_RUNNING && g_mtbdd_error == BDD_RUNNING && mtbdd == 0,
+           "mtbdd_init during a running session fails with BDD_RUNNING and keeps the mode");
+    {
+        bdd f = bdd_ithvar(2) & bdd_ithvar(3);   /* dropped at the end of the block */
+    }
+    bdd_gbc();
+    BDD reuse = bdd_addref(bdd_makenode(4, 0, bdd_ithvar(7).id()));
+    bdd g = bdd_ithvar(2) & bdd_ithvar(3);
+    EXPECT(is_and_of(g, 2, 3), "plain results stay correct across a collection in that session");
+    bdd_delref(reuse);
+    bdd_error_hook(bdd_default_errhandler);
+    bdd_done();
+
+    /* ... nor switch a running MTBDD session to plain mode. This session
+     * also declares no variables: its bdd_done must not free the previous
+     * session's variable tables a second time. */
+    mtbdd_init(1000, 100);
+    bdd_error_hook(record_mtbdd_error);
+    g_mtbdd_error = 0;
+    rc = mtbdd_init(1000, 100);
+    EXPECT(rc == BDD_RUNNING && mtbdd == 1,
+           "mtbdd_init during a running MTBDD session fails and keeps MTBDD mode");
+    bdd_error_hook(bdd_default_errhandler);
+    bdd_done();
+    EXPECT(true, "a session without variables ends cleanly after one with variables");
+
+#if !defined(_WIN32) && !defined(UNDER_SANITIZER)
+    /* A failed mtbdd_init, here a node table that cannot be allocated, must
+     * leave neither MTBDD mode nor a stale table behind. Checked in a child
+     * whose address space is capped, and reported only on failure, so the
+     * output does not depend on whether this platform can run it. */
+    {
+        ChildResult r = run_in_child(failed_mtbdd_init_child);
+        if (r.state == ChildResult::WAIT_FAILED ||
+            (r.state == ChildResult::WAITED && !(WIFEXITED(r.status) && WEXITSTATUS(r.status) == 0))) {
+            printf("FAIL: a failed mtbdd_init leaves no MTBDD mode or stale table behind\n");
+            ++g_failed;
+        }
+    }
+#endif
+
+#if !defined(NDEBUG) && !defined(_WIN32)
+    /* With assertions enabled, a plain operation that reaches its cache after
+     * mtbdd_init stops at an assertion with a message. */
+    expect_plain_cache_assert("a plain operation after mtbdd_init stops at the assertion",
+                              plain_op_after_mtbdd_init);
+    expect_plain_cache_assert("cache-free plain calls do not allocate the plain caches",
+                              cache_free_calls_then_plain_op);
+    expect_plain_cache_assert("no plain caches carry into the next mtbdd_init session",
+                              plain_op_in_next_mtbdd_session);
+    for (const CacheScenario &c : kCacheScenarios)
+        expect_plain_cache_assert(c.what, c.fn);
+#endif
+}
+
 int main() {
     printf("MoToBuddy MTBDD test suite\n");
 
@@ -1265,6 +1654,7 @@ int main() {
     test_freefun_contract();
     test_cube2();
     test_reinit();
+    test_init_modes();
     test_guarded_variants();
     test_differential();
     test_mtbdd_argument_checks();
