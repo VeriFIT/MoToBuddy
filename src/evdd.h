@@ -33,17 +33,20 @@ typedef struct s_EVDD {
     evdd_value_id w;     /**< Incoming weight (intern table index). */
 } EVDD;
 
-/** Node-table indices for the two sinks (weights still live on EVDD.w). */
-#define EVDD_FALSE_NODE 0
-#define EVDD_TRUE_NODE  1
+/**
+ * Sole sink (multiplicative 1-terminal). Zero is not a node: it is an edge
+ * to this terminal with weight @c EVDD_VALUE_ZERO (@c evdd_false).
+ */
+#define EVDD_TRUE_NODE 0
 
 int  evdd_init(int initnodesize);
 void evdd_done(void);
 int  evdd_isrunning(void);
 
-/** Constant edges: sinks with identity incoming weight. */
+/** Constant edge to the 1-terminal with weight @p w. */
+EVDD evdd_const(evdd_value_id w);
+/** Zero diagram: @c evdd_const(EVDD_VALUE_ZERO). */
 EVDD evdd_false(void);
-EVDD evdd_true(void);
 
 /**
  * Eager makenode: weight-normalize outgoing edges, then unique-table
@@ -89,8 +92,8 @@ void evdd_gbc(void);
  * Nodes = levels, dashed = low, solid = high, edge labels via to_str.
  * Invisible root edge carries the incoming weight.
  *
- * If @p hide_zeros is non-zero, omit zero-weight edges and the false (0)
- * terminal; edges into the 0-node are not drawn either.
+ * If @p hide_zeros is non-zero, omit zero-weight edges (zeros live on
+ * edges, not a 0-terminal).
  */
 void evdd_printdot(EVDD root, int hide_zeros);
 void evdd_fprintdot(FILE *ofile, EVDD root, int hide_zeros);

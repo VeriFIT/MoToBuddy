@@ -24,13 +24,13 @@ extern "C" {
  * Ids
  * ---------------------------------------------------------------------- */
 
-/** Intern table index. 0 = multiplicative absorb, 1 = identity. */
+/** Intern table index. 0 = multiplicative absorb (no payload). */
 typedef unsigned evdd_value_id;
 /** CUSTOM-style type id (several may be live in one intern table). */
 typedef unsigned evdd_value_type;
 
+/** Bare absorb only. Identity is a normal typed intern (see is_one). */
 #define EVDD_VALUE_ZERO ((evdd_value_id)0)
-#define EVDD_VALUE_ONE  ((evdd_value_id)1)
 
 /* -------------------------------------------------------------------------
  * Callbacks (payloads are user pointers, same contract as mtbdd terminals)
@@ -146,7 +146,9 @@ evdd_value_type evdd_value_get_type(evdd_value_id id);
 void evdd_value_done(void);
 
 /* -------------------------------------------------------------------------
- * Algebra on interned ids (hard error on type mismatch; 0/1 are untyped)
+ * Algebra on interned ids (hard error on type mismatch).
+ * Bare ZERO: get() is NULL; callbacks treat NULL as 0. Identity is typed;
+ * short-circuits use is_zero / is_one predicates.
  * ---------------------------------------------------------------------- */
 
 evdd_value_id evdd_value_mul(evdd_value_id a, evdd_value_id b);
@@ -155,6 +157,10 @@ evdd_value_id evdd_value_add(evdd_value_id a, evdd_value_id b);
 evdd_value_id evdd_value_sub(evdd_value_id a, evdd_value_id b);
 int evdd_value_is_zero(evdd_value_id id);
 int evdd_value_is_one(evdd_value_id id);
+/** Multiplicative unit derived as div(w,w); ZERO if w is zero. */
+evdd_value_id evdd_value_unit(evdd_value_id w);
+/** Unit from the first nonzero of the pair. */
+evdd_value_id evdd_value_unit_from_pair(evdd_value_id a, evdd_value_id b);
 evddNormResult evdd_value_normalize(evdd_value_id w_low, evdd_value_id w_high);
 
 #ifdef __cplusplus

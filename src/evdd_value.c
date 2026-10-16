@@ -71,7 +71,7 @@ static void evdd_value_release(void *value, evdd_value_type type)
 
 static int evdd_value_is_untyped(evdd_value_id id)
 {
-    return id == EVDD_VALUE_ZERO || id == EVDD_VALUE_ONE;
+    return id == EVDD_VALUE_ZERO;
 }
 
 static evdd_value_type evdd_value_type_of(evdd_value_id id)
@@ -117,7 +117,8 @@ static int evdd_value_ensure_table(void)
             return 0;
         }
         evddmaxValueSize = EVDD_VALUE_INITIAL_SIZE;
-        evddLastValueIndex = 2;
+        /* Slot 0 reserved for bare ZERO; first payload at index 1. */
+        evddLastValueIndex = 1;
         return 1;
     }
     if (evddLastValueIndex >= evddmaxValueSize) {
@@ -358,10 +359,6 @@ evdd_value_id evdd_value_intern(void *value, evdd_value_type type)
         evdd_value_release(value, type);
         return EVDD_VALUE_ZERO;
     }
-    if (EVDDVALUEISONE(type) && EVDDVALUEISONE(type)(value)) {
-        evdd_value_release(value, type);
-        return EVDD_VALUE_ONE;
-    }
 
     if (EVDDVALUEHASH(type)) {
         h = EVDDVALUEHASH(type)(value);
@@ -369,7 +366,7 @@ evdd_value_id evdd_value_intern(void *value, evdd_value_type type)
     }
 
     if (evddValues != NULL) {
-        for (i = 2; i < evddLastValueIndex; i++) {
+        for (i = 1; i < evddLastValueIndex; i++) {
             evdd_value_compare_function_t cmp;
             if (evddValues[i].payload == NULL || evddValues[i].type != type)
                 continue;
@@ -415,7 +412,7 @@ void evdd_value_done(void)
 {
     int i;
     if (evddValues != NULL) {
-        for (i = 2; i < evddLastValueIndex; i++) {
+        for (i = 1; i < evddLastValueIndex; i++) {
             if (evddValues[i].payload != NULL)
                 evdd_value_release(evddValues[i].payload, evddValues[i].type);
         }
@@ -431,6 +428,8 @@ void evdd_value_done(void)
  * Algebra on interned ids
  * ---------------------------------------------------------------------- */
 
+evdd_value_id evdd_value_div(evdd_value_id a, evdd_value_id b);
+
 int evdd_value_is_zero(evdd_value_id id)
 {
     evdd_value_pred_function_t pred;
@@ -438,8 +437,6 @@ int evdd_value_is_zero(evdd_value_id id)
 
     if (id == EVDD_VALUE_ZERO)
         return 1;
-    if (id == EVDD_VALUE_ONE)
-        return 0;
     t = evdd_value_type_of(id);
     if (t == EVDD_VALUE_UNTYPED)
         return 0;
@@ -452,8 +449,6 @@ int evdd_value_is_one(evdd_value_id id)
     evdd_value_pred_function_t pred;
     evdd_value_type t;
 
-    if (id == EVDD_VALUE_ONE)
-        return 1;
     if (id == EVDD_VALUE_ZERO)
         return 0;
     t = evdd_value_type_of(id);
@@ -463,28 +458,49 @@ int evdd_value_is_one(evdd_value_id id)
     return pred ? pred(evdd_value_get(id)) : 0;
 }
 
+/**
+ * Call the type's binary op. Bare ZERO: get() is NULL; callback treats as 0.
+ */
 static evdd_value_id evdd_value_apply_binary(evdd_value_id a, evdd_value_id b,
                                              evdd_value_binary_function_t fun,
                                              evdd_value_type type)
 {
     void *res;
+
     if (fun == NULL) {
         bdd_error(BDD_OP);
         return EVDD_VALUE_ZERO;
     }
+
     res = fun(evdd_value_get(a), evdd_value_get(b));
     return evdd_value_intern(res, type);
+}
+
+evdd_value_id evdd_value_unit(evdd_value_id w)
+{
+    if (evdd_value_is_zero(w))
+        return EVDD_VALUE_ZERO;
+    return evdd_value_div(w, w);
+}
+
+evdd_value_id evdd_value_unit_from_pair(evdd_value_id a, evdd_value_id b)
+{
+    if (!evdd_value_is_zero(a))
+        return evdd_value_unit(a);
+    if (!evdd_value_is_zero(b))
+        return evdd_value_unit(b);
+    return EVDD_VALUE_ZERO;
 }
 
 evdd_value_id evdd_value_mul(evdd_value_id a, evdd_value_id b)
 {
     evdd_value_type t;
 
-    if (a == EVDD_VALUE_ZERO || b == EVDD_VALUE_ZERO)
+    if (evdd_value_is_zero(a) || evdd_value_is_zero(b))
         return EVDD_VALUE_ZERO;
-    if (a == EVDD_VALUE_ONE)
+    if (evdd_value_is_one(a))
         return b;
-    if (b == EVDD_VALUE_ONE)
+    if (evdd_value_is_one(b))
         return a;
     if (!evdd_value_resolve_type(a, b, &t) || t == EVDD_VALUE_UNTYPED)
         return EVDD_VALUE_ZERO;
@@ -500,9 +516,9 @@ evdd_value_id evdd_value_div(evdd_value_id a, evdd_value_id b)
         bdd_error(BDD_OP);
         return EVDD_VALUE_ZERO;
     }
-    if (a == EVDD_VALUE_ZERO)
+    if (evdd_value_is_zero(a))
         return EVDD_VALUE_ZERO;
-    if (b == EVDD_VALUE_ONE)
+    if (evdd_value_is_one(b))
         return a;
     if (!evdd_value_resolve_type(a, b, &t) || t == EVDD_VALUE_UNTYPED)
         return EVDD_VALUE_ZERO;
@@ -513,9 +529,9 @@ evdd_value_id evdd_value_add(evdd_value_id a, evdd_value_id b)
 {
     evdd_value_type t;
 
-    if (a == EVDD_VALUE_ZERO)
+    if (evdd_value_is_zero(a))
         return b;
-    if (b == EVDD_VALUE_ZERO)
+    if (evdd_value_is_zero(b))
         return a;
     if (!evdd_value_resolve_type(a, b, &t) || t == EVDD_VALUE_UNTYPED)
         return EVDD_VALUE_ZERO;
@@ -526,8 +542,10 @@ evdd_value_id evdd_value_sub(evdd_value_id a, evdd_value_id b)
 {
     evdd_value_type t;
 
-    if (b == EVDD_VALUE_ZERO)
+    if (evdd_value_is_zero(b))
         return a;
+    if (evdd_value_is_one(a) && evdd_value_is_one(b))
+        return EVDD_VALUE_ZERO;
     if (!evdd_value_resolve_type(a, b, &t) || t == EVDD_VALUE_UNTYPED)
         return EVDD_VALUE_ZERO;
     return evdd_value_apply_binary(a, b, EVDDVALUESUB(t), t);
@@ -554,13 +572,13 @@ static evddNormResult evdd_norm_first_nonzero(evdd_value_id w_low,
         return evdd_norm_zeros();
     if (!evdd_value_is_zero(w_low)) {
         r.incoming = w_low;
-        r.w_low = EVDD_VALUE_ONE;
+        r.w_low = evdd_value_unit(w_low);
         r.w_high = evdd_value_div(w_high, w_low);
         return r;
     }
     r.incoming = w_high;
     r.w_low = EVDD_VALUE_ZERO;
-    r.w_high = EVDD_VALUE_ONE;
+    r.w_high = evdd_value_unit(w_high);
     return r;
 }
 
@@ -571,13 +589,13 @@ static evddNormResult evdd_norm_low(evdd_value_id w_low, evdd_value_id w_high)
     if (evdd_value_is_zero(w_low) && evdd_value_is_zero(w_high))
         return evdd_norm_zeros();
     if (evdd_value_is_zero(w_low)) {
-        r.incoming = EVDD_VALUE_ONE;
+        r.incoming = evdd_value_unit(w_high);
         r.w_low = EVDD_VALUE_ZERO;
         r.w_high = w_high;
         return r;
     }
     r.incoming = w_low;
-    r.w_low = EVDD_VALUE_ONE;
+    r.w_low = evdd_value_unit(w_low);
     r.w_high = evdd_value_div(w_high, w_low);
     return r;
 }
@@ -621,7 +639,7 @@ static evddNormResult evdd_norm_l2(evdd_value_id w_low, evdd_value_id w_high)
     if (!evdd_value_resolve_type(w_low, w_high, &t) || t == EVDD_VALUE_UNTYPED) {
         r.w_low = w_low;
         r.w_high = w_high;
-        r.incoming = EVDD_VALUE_ONE;
+        r.incoming = evdd_value_unit_from_pair(w_low, w_high);
         return r;
     }
 
@@ -651,7 +669,7 @@ evddNormResult evdd_value_normalize(evdd_value_id w_low, evdd_value_id w_high)
 
     r.w_low = w_low;
     r.w_high = w_high;
-    r.incoming = EVDD_VALUE_ONE;
+    r.incoming = evdd_value_unit_from_pair(w_low, w_high);
 
     if (!evdd_value_resolve_type(w_low, w_high, &t) || t == EVDD_VALUE_UNTYPED)
         return r;

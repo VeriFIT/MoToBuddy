@@ -470,10 +470,6 @@ static void evdd_fprint_value_id(FILE *ofile, evdd_value_id id)
       fputs("0", ofile);
       return;
    }
-   if (id == EVDD_VALUE_ONE) {
-      fputs("1", ofile);
-      return;
-   }
 
    t = evdd_value_get_type(id);
    tostr = EVDDVALUETOSTR(t);
@@ -492,12 +488,13 @@ static void evdd_fprint_value_id(FILE *ofile, evdd_value_id id)
    free(buf);
 }
 
-/** Skip edge (and its child) when hide_zeros: zero weight or false sink. */
+/** Skip edge when hide_zeros and weight is zero. */
 static int evdd_dot_hide_edge(int hide_zeros, evdd_value_id w, int child)
 {
+   (void)child;
    if (!hide_zeros)
       return 0;
-   return evdd_value_is_zero(w) || EVDDISZERO(child);
+   return evdd_value_is_zero(w);
 }
 
 static void evdd_fprintdot_rec(FILE *ofile, int node, int hide_zeros)
@@ -539,13 +536,10 @@ void evdd_fprintdot(FILE *ofile, EVDD root, int hide_zeros)
       return;
 
    fprintf(ofile, "digraph G {\n");
-   if (!hide_zeros)
-      fprintf(ofile,
-              "0 [shape=box, label=\"0\", style=filled, height=0.3, "
-              "width=0.3];\n");
    fprintf(ofile,
-           "1 [shape=box, label=\"1\", style=filled, height=0.3, "
-           "width=0.3];\n");
+           "%d [shape=box, label=\"1\", style=filled, height=0.3, "
+           "width=0.3];\n",
+           EVDD_TRUE_NODE);
    fprintf(ofile, "root [shape=point, width=0.0, label=\"\"];\n");
 
    if (!evdd_dot_hide_edge(hide_zeros, root.w, root.node)) {

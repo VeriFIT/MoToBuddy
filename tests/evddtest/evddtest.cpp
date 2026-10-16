@@ -151,12 +151,12 @@ static evddNormResult high_unit_norm(evdd_value_id w_low, evdd_value_id w_high) 
     if (evdd_value_is_zero(w_high)) {
         r.w_low = w_low;
         r.w_high = w_high;
-        r.incoming = EVDD_VALUE_ONE;
+        r.incoming = evdd_value_unit_from_pair(w_low, w_high);
         return r;
     }
     r.incoming = w_high;
     r.w_low = evdd_value_div(w_low, w_high);
-    r.w_high = EVDD_VALUE_ONE;
+    r.w_high = evdd_value_unit(w_high);
     return r;
 }
 
@@ -207,19 +207,20 @@ static evdd_value_id intern_dbl(evdd_value_type t, double v) {
     return evdd_value_intern(box_dbl(v), t);
 }
 
+static evdd_value_id one_int(evdd_value_type t) { return intern_int(t, 1); }
+static evdd_value_id one_dbl(evdd_value_type t) { return intern_dbl(t, 1.0); }
+static EVDD unit_const_int(evdd_value_type t) { return evdd_const(one_int(t)); }
+static EVDD unit_const_dbl(evdd_value_type t) { return evdd_const(one_dbl(t)); }
+
 static int get_int(evdd_value_id id) {
     if (id == EVDD_VALUE_ZERO)
         return 0;
-    if (id == EVDD_VALUE_ONE)
-        return 1;
     return int_val(evdd_value_get(id));
 }
 
 static double get_dbl(evdd_value_id id) {
     if (id == EVDD_VALUE_ZERO)
         return 0.0;
-    if (id == EVDD_VALUE_ONE)
-        return 1.0;
     return dbl_val(evdd_value_get(id));
 }
 
@@ -303,8 +304,8 @@ static void test_intern_uniquing(void) {
     evdd_value_id a2 = intern_int(t, 42);
     evdd_value_id b = intern_int(t, 7);
 
-    EXPECT(a1 != EVDD_VALUE_ZERO && a1 != EVDD_VALUE_ONE && get_int(a1) == 42,
-           "interned payload is not reserved 0/1");
+    EXPECT(a1 != EVDD_VALUE_ZERO && get_int(a1) == 42,
+           "interned payload is not bare ZERO");
     EXPECT(a1 == a2 && get_int(a2) == 42, "equal values intern to the same id");
     EXPECT(a1 != b && get_int(b) == 7, "distinct values get distinct ids");
     EXPECT(get_int(a1) == 42, "get returns stored int");
@@ -317,11 +318,13 @@ static void test_intern_uniquing(void) {
 
     EXPECT(get_int(five) == 5 && intern_int(t, 0) == EVDD_VALUE_ZERO,
            "is_zero payload collapses to ZERO");
-    EXPECT(get_int(five) == 5 && intern_int(t, 1) == EVDD_VALUE_ONE,
-           "is_one payload collapses to ONE");
+    evdd_value_id one = intern_int(t, 1);
+    EXPECT(get_int(five) == 5 && one != EVDD_VALUE_ZERO && evdd_value_is_one(one),
+           "is_one payload stays typed and is_one");
+    EXPECT(intern_int(t, 1) == one, "typed ones uniquify");
 
     EXPECT(evdd_value_get(EVDD_VALUE_ZERO) == NULL, "get(ZERO) is NULL");
-    EXPECT(evdd_value_get(EVDD_VALUE_ONE) == NULL, "get(ONE) is NULL");
+    EXPECT(evdd_value_get(one) != NULL, "get(typed one) is non-NULL");
 
     teardown_values();
 }
@@ -399,8 +402,9 @@ static void test_is_zero_is_one(void) {
 
     EXPECT(evdd_value_is_zero(EVDD_VALUE_ZERO), "ZERO is zero");
     EXPECT(!evdd_value_is_one(EVDD_VALUE_ZERO), "ZERO is not one");
-    EXPECT(evdd_value_is_one(EVDD_VALUE_ONE), "ONE is one");
-    EXPECT(!evdd_value_is_zero(EVDD_VALUE_ONE), "ONE is not zero");
+    evdd_value_id one = one_int(t);
+    EXPECT(evdd_value_is_one(one), "typed ONE is one");
+    EXPECT(!evdd_value_is_zero(one), "typed ONE is not zero");
 
     evdd_value_id five = intern_int(t, 5);
     EXPECT(get_int(five) == 5 && !evdd_value_is_zero(five) &&
@@ -418,28 +422,34 @@ static void test_algebra(void) {
     EXPECT(get_int(two) == 2 && get_int(three) == 3 && get_int(six) == 6,
            "algebra operands interned");
 
+    evdd_value_id one = one_int(t);
     EXPECT(get_int(evdd_value_mul(two, three)) == 6, "mul 2*3 interned as 6");
-    EXPECT(get_int(evdd_value_mul(two, EVDD_VALUE_ONE)) == 2, "mul by ONE is identity");
-    EXPECT(get_int(evdd_value_mul(EVDD_VALUE_ONE, three)) == 3, "ONE*x is x");
+    EXPECT(get_int(evdd_value_mul(two, one)) == 2, "mul by ONE is identity");
+    EXPECT(get_int(evdd_value_mul(one, three)) == 3, "ONE*x is x");
     EXPECT(get_int(two) == 2 &&
                evdd_value_mul(two, EVDD_VALUE_ZERO) == EVDD_VALUE_ZERO,
            "mul by ZERO absorbs");
     EXPECT(get_int(three) == 3 &&
                evdd_value_mul(EVDD_VALUE_ZERO, three) == EVDD_VALUE_ZERO,
            "ZERO*x absorbs");
-    EXPECT(evdd_value_mul(EVDD_VALUE_ZERO, EVDD_VALUE_ONE) == EVDD_VALUE_ZERO,
+    EXPECT(evdd_value_mul(EVDD_VALUE_ZERO, one) == EVDD_VALUE_ZERO,
            "ZERO*ONE is ZERO");
 
     EXPECT(get_int(evdd_value_add(two, three)) == 5, "add 2+3");
     EXPECT(get_int(evdd_value_add(two, EVDD_VALUE_ZERO)) == 2, "add ZERO is identity");
+    EXPECT(get_int(evdd_value_add(one, three)) == 4, "add ONE+typed");
+    EXPECT(get_int(evdd_value_add(one, one)) == 2, "add ONE+ONE");
     EXPECT(get_int(evdd_value_sub(six, two)) == 4, "sub 6-2");
     EXPECT(get_int(two) == 2 && evdd_value_sub(two, two) == EVDD_VALUE_ZERO,
            "sub x-x collapses to ZERO");
+    EXPECT(get_int(evdd_value_sub(EVDD_VALUE_ZERO, three)) == -3, "sub ZERO-typed");
+    EXPECT(evdd_value_sub(one, one) == EVDD_VALUE_ZERO, "sub ONE-ONE is ZERO");
     EXPECT(get_int(evdd_value_div(six, two)) == 3, "div 6/2");
-    EXPECT(get_int(evdd_value_div(six, EVDD_VALUE_ONE)) == 6, "div by ONE is identity");
+    EXPECT(get_int(evdd_value_div(six, one)) == 6, "div by ONE is identity");
     EXPECT(get_int(two) == 2 &&
                evdd_value_div(EVDD_VALUE_ZERO, two) == EVDD_VALUE_ZERO,
            "ZERO / x is ZERO");
+    EXPECT(evdd_value_is_one(evdd_value_div(one, one)), "div ONE/ONE is ONE");
 
     reset_errors();
     (void)evdd_value_div(two, EVDD_VALUE_ZERO);
@@ -486,17 +496,17 @@ static void test_normalize_first_nonzero(void) {
     EXPECT(EVDDVALUENORMALIZE(t) != NULL, "built-in normalizefun installed");
 
     evddNormResult r = evdd_value_normalize(intern_dbl(t, 3.0), intern_dbl(t, 6.0));
-    EXPECT(r.w_low == EVDD_VALUE_ONE, "nonzero low becomes ONE");
+    EXPECT(evdd_value_is_one(r.w_low), "nonzero low becomes ONE");
     EXPECT(nearly(get_dbl(r.w_high), 2.0), "high divided by low");
     EXPECT(nearly(get_dbl(r.incoming), 3.0), "incoming is the low factor");
 
     r = evdd_value_normalize(EVDD_VALUE_ZERO, intern_dbl(t, 4.0));
-    EXPECT(r.w_low == EVDD_VALUE_ZERO && r.w_high == EVDD_VALUE_ONE,
+    EXPECT(r.w_low == EVDD_VALUE_ZERO && evdd_value_is_one(r.w_high),
            "zero low: high becomes ONE");
     EXPECT(nearly(get_dbl(r.incoming), 4.0), "incoming is the high factor");
 
     r = evdd_value_normalize(intern_dbl(t, -2.0), intern_dbl(t, 4.0));
-    EXPECT(r.w_low == EVDD_VALUE_ONE, "negative low still factors");
+    EXPECT(evdd_value_is_one(r.w_low), "negative low still factors");
     EXPECT(nearly(get_dbl(r.w_high), -2.0), "high / low keeps sign");
     EXPECT(nearly(get_dbl(r.incoming), -2.0), "incoming keeps the low value");
 
@@ -518,13 +528,13 @@ static void test_normalize_low(void) {
            "low-edge strategy accepted");
 
     evddNormResult r = evdd_value_normalize(intern_dbl(t, 3.0), intern_dbl(t, 6.0));
-    EXPECT(r.w_low == EVDD_VALUE_ONE && nearly(get_dbl(r.w_high), 2.0) &&
+    EXPECT(evdd_value_is_one(r.w_low) && nearly(get_dbl(r.w_high), 2.0) &&
                nearly(get_dbl(r.incoming), 3.0),
            "nonzero low: same as first-nonzero");
 
     r = evdd_value_normalize(EVDD_VALUE_ZERO, intern_dbl(t, 4.0));
     EXPECT(r.w_low == EVDD_VALUE_ZERO && nearly(get_dbl(r.w_high), 4.0) &&
-               r.incoming == EVDD_VALUE_ONE,
+               evdd_value_is_one(r.incoming),
            "zero low: keep high, incoming ONE (no high fallback)");
 
     teardown_values();
@@ -536,17 +546,17 @@ static void test_normalize_max_magnitude(void) {
     evdd_set_normalization(t, EVDD_NORMALIZE_MAX_MAGNITUDE);
 
     evddNormResult r = evdd_value_normalize(intern_dbl(t, 3.0), intern_dbl(t, 4.0));
-    EXPECT(r.w_high == EVDD_VALUE_ONE, "larger |w| edge becomes ONE");
+    EXPECT(evdd_value_is_one(r.w_high), "larger |w| edge becomes ONE");
     EXPECT(nearly(get_dbl(r.w_low), 0.75), "other edge divided by max");
     EXPECT(nearly(get_dbl(r.incoming), 4.0), "incoming is the max-magnitude value");
 
     r = evdd_value_normalize(intern_dbl(t, -5.0), intern_dbl(t, 3.0));
-    EXPECT(r.w_low == EVDD_VALUE_ONE, "divide by the actual max-mag edge (keep sign)");
+    EXPECT(evdd_value_is_one(r.w_low), "divide by the actual max-mag edge (keep sign)");
     EXPECT(nearly(get_dbl(r.w_high), -0.6), "other / -5");
     EXPECT(nearly(get_dbl(r.incoming), -5.0), "incoming is -5");
 
     r = evdd_value_normalize(intern_dbl(t, 3.0), intern_dbl(t, -3.0));
-    EXPECT(r.w_low == EVDD_VALUE_ONE, "tie: prefer low");
+    EXPECT(evdd_value_is_one(r.w_low), "tie: prefer low");
     EXPECT(nearly(get_dbl(r.w_high), -1.0), "tie: high / low");
     EXPECT(nearly(get_dbl(r.incoming), 3.0), "tie: incoming is low");
 
@@ -562,8 +572,8 @@ static void test_normalize_l2(void) {
     EXPECT(nearly(get_dbl(r.w_low), 0.6) && nearly(get_dbl(r.w_high), 0.8),
            "L2 (3,4) -> (0.6, 0.8)");
     EXPECT(nearly(get_dbl(r.incoming), 5.0), "L2 incoming is the norm");
-    EXPECT(nearly(get_dbl(r.w_low), 0.6) && r.w_low != EVDD_VALUE_ONE &&
-               r.w_high != EVDD_VALUE_ONE,
+    EXPECT(nearly(get_dbl(r.w_low), 0.6) && !evdd_value_is_one(r.w_low) &&
+               !evdd_value_is_one(r.w_high),
            "L2 need not produce a unit edge");
 
     teardown_values();
@@ -584,7 +594,7 @@ static void test_normalize_custom_and_freeze(void) {
     EXPECT(evdd_value_functions_list[t].strategy_frozen, "CUSTOM freezes");
 
     evddNormResult r = evdd_value_normalize(intern_dbl(t, 3.0), intern_dbl(t, 6.0));
-    EXPECT(r.w_high == EVDD_VALUE_ONE, "custom: high becomes ONE");
+    EXPECT(evdd_value_is_one(r.w_high), "custom: high becomes ONE");
     EXPECT(nearly(get_dbl(r.w_low), 0.5), "custom: low / high");
     EXPECT(nearly(get_dbl(r.incoming), 6.0), "custom: incoming is high");
 
@@ -637,7 +647,7 @@ static void test_two_types_two_norms(void) {
         evdd_value_normalize(intern_dbl(ints, 3.0), intern_dbl(ints, 6.0));
     evddNormResult b =
         evdd_value_normalize(intern_dbl(dbls, 3.0), intern_dbl(dbls, 4.0));
-    EXPECT(a.w_low == EVDD_VALUE_ONE && nearly(get_dbl(a.w_high), 2.0),
+    EXPECT(evdd_value_is_one(a.w_low) && nearly(get_dbl(a.w_high), 2.0),
            "int-typed diagram uses first-nonzero");
     EXPECT(nearly(get_dbl(b.w_low), 0.6) && nearly(get_dbl(b.w_high), 0.8),
            "double-typed diagram uses L2");
@@ -663,26 +673,26 @@ static void test_node_table_init(void) {
     EXPECT(evdd_init(1000) == 0, "evdd_init succeeds");
     EXPECT(evdd_isrunning(), "evdd_isrunning after init");
     EXPECT(evddnodes != NULL && evddnodesize >= 1000, "table allocated at prime size");
-    EXPECT(evddfreenum == evddnodesize - 2 && evddfreepos == 2,
-           "freelist starts at 2 with size-2 free nodes");
+    EXPECT(evddfreenum == evddnodesize - 1 && evddfreepos == 1,
+           "freelist starts at 1 with size-1 free nodes");
 
-    EXPECT(evddnodes[EVDD_FALSE_NODE].refcou == EVDD_MAXREF &&
-               evddnodes[EVDD_TRUE_NODE].refcou == EVDD_MAXREF,
-           "sinks are pinned MAXREF");
-    EXPECT(EVDDLEVEL(EVDD_FALSE_NODE) == EVDD_MAXLEVEL &&
-               EVDDLEVEL(EVDD_TRUE_NODE) == EVDD_MAXLEVEL,
-           "sinks sit at MAXLEVEL");
-    EXPECT(EVDDLOW(EVDD_FALSE_NODE) == EVDD_FALSE_NODE &&
+    EXPECT(evddnodes[EVDD_TRUE_NODE].refcou == EVDD_MAXREF,
+           "1-terminal is pinned MAXREF");
+    EXPECT(EVDDLEVEL(EVDD_TRUE_NODE) == EVDD_MAXLEVEL,
+           "1-terminal sits at MAXLEVEL");
+    EXPECT(EVDDLOW(EVDD_TRUE_NODE) == EVDD_TRUE_NODE &&
                EVDDHIGH(EVDD_TRUE_NODE) == EVDD_TRUE_NODE,
-           "sinks point to themselves");
-    EXPECT(EVDDISFREE(2), "first free slot has low==-1");
+           "1-terminal points to itself");
+    EXPECT(EVDDISFREE(1), "first free slot has low==-1");
 
     EVDD z = evdd_false();
-    EVDD o = evdd_true();
-    EXPECT(z.node == EVDD_FALSE_NODE && z.w == EVDD_VALUE_ONE,
-           "evdd_false is (0, ONE)");
-    EXPECT(o.node == EVDD_TRUE_NODE && o.w == EVDD_VALUE_ONE,
-           "evdd_true is (1, ONE)");
+    EXPECT(z.node == EVDD_TRUE_NODE && z.w == EVDD_VALUE_ZERO,
+           "evdd_false is (TRUE, ZERO)");
+    evdd_value_type ti = register_int_type();
+    EVDD o = evdd_const(one_int(ti));
+    EXPECT(o.node == EVDD_TRUE_NODE && evdd_value_is_one(o.w),
+           "evdd_const(typed 1) is (TRUE, one)");
+    teardown_values();
 
     reset_errors();
     EXPECT(evdd_init(100) != 0 && g_error_count >= 1,
@@ -701,44 +711,50 @@ static void test_makenode_raw(void) {
 
     EXPECT(evdd_init(128) == 0, "makenode_raw: evdd_init");
 
+    evdd_value_type ti = register_int_type();
     EVDD f = evdd_false();
-    EVDD t = evdd_true();
+    EVDD t = unit_const_int(ti);
     EVDD a = evdd_makenode_raw(0, f, t);
-    EXPECT(a.w == EVDD_VALUE_ONE && a.node >= 2, "raw returns (ONE, node>=2)");
-    EXPECT(EVDDLEVEL(a.node) == 0 && EVDDLOW(a.node) == EVDD_FALSE_NODE &&
+    EXPECT(evdd_value_is_one(a.w) && a.node >= 1, "raw returns (unit, node>=1)");
+    EXPECT(EVDDLEVEL(a.node) == 0 && EVDDLOW(a.node) == EVDD_TRUE_NODE &&
                EVDDHIGH(a.node) == EVDD_TRUE_NODE,
            "raw stores level and child node ids");
-    EXPECT(EVDDWLOW(a.node) == EVDD_VALUE_ONE &&
-               EVDDWHIGH(a.node) == EVDD_VALUE_ONE,
+    EXPECT(EVDDWLOW(a.node) == EVDD_VALUE_ZERO &&
+               evdd_value_is_one(EVDDWHIGH(a.node)),
            "raw stores child edge weights on the node");
 
     EVDD b = evdd_makenode_raw(0, f, t);
     EXPECT(a.node == b.node && evddproduced == 1, "raw unique hit shares node");
 
     EVDD same = evdd_makenode_raw(3, t, t);
-    EXPECT(same.node == EVDD_TRUE_NODE && same.w == EVDD_VALUE_ONE,
+    EXPECT(same.node == EVDD_TRUE_NODE && evdd_value_is_one(same.w),
            "raw skip-reduces equal children to that edge");
+    evdd_set_normalization(ti, EVDD_NORMALIZE_FIRST_NONZERO);
     EVDD same_e = evdd_makenode(3, t, t);
-    EXPECT(same_e.node == EVDD_TRUE_NODE && same_e.w == EVDD_VALUE_ONE,
+    EXPECT(same_e.node == EVDD_TRUE_NODE && evdd_value_is_one(same_e.w),
            "eager skip-reduces equal children to that edge");
 
-    evdd_value_type ti = register_int_type();
     EVDD tw = t;
     tw.w = intern_int(ti, 2);
     EVDD fold = evdd_makenode_raw(1, tw, tw);
     EXPECT(fold.node == EVDD_TRUE_NODE && get_int(fold.w) == 2,
            "raw skip-reduce keeps common edge weight");
-    evdd_set_normalization(ti, EVDD_NORMALIZE_FIRST_NONZERO);
     EVDD fold_e = evdd_makenode(1, tw, tw);
     /* normalize (2,2) -> incoming 2, edges (1,1) -> skip to TRUE with w=1
        then makenode multiplies incoming => (TRUE, 2) */
     EXPECT(fold_e.node == EVDD_TRUE_NODE && get_int(fold_e.w) == 2,
            "eager skip-reduce folds normalized incoming onto edge");
 
+    EVDD zedge = f;
+    zedge.w = EVDD_VALUE_ZERO;
+    EVDD skip_f = evdd_makenode_raw(2, zedge, zedge);
+    EXPECT(EVDDISFALSE(skip_f),
+           "raw skip-reduce to false is canonical evdd_false");
+
     EVDD low = f;
     EVDD high = t;
     low.w = intern_int(ti, 2);
-    high.w = intern_int(ti, 3);
+    high.w = intern_int(ti, 4); /* 4/2=2; avoid int 3/2→1 which skip-reduces */
     EVDD r1 = evdd_makenode_raw(2, low, high);
     EVDD r2 = evdd_makenode_raw(2, low, high);
     EXPECT(r1.node == r2.node && EVDDWLOW(r1.node) == low.w &&
@@ -750,19 +766,17 @@ static void test_makenode_raw(void) {
     EVDD r3 = evdd_makenode_raw(2, other, high);
     EXPECT(r3.node != r1.node, "different outgoing weight => different node");
 
-    evdd_set_normalization(ti, EVDD_NORMALIZE_FIRST_NONZERO);
     EVDD e = evdd_makenode(2, low, high);
-    EXPECT(e.w == low.w && EVDDWLOW(e.node) == EVDD_VALUE_ONE &&
-               get_int(EVDDWHIGH(e.node)) == 1,
+    EXPECT(e.w == low.w && evdd_value_is_one(EVDDWLOW(e.node)) &&
+               get_int(EVDDWHIGH(e.node)) == 2,
            "makenode weight-normalizes then calls raw");
-    /* 3/2 with ints: int_div of 3/2 */
     EXPECT(get_int(EVDDWHIGH(e.node)) == get_int(evdd_value_div(high.w, low.w)),
            "makenode high weight is w_high/incoming");
 
     /* Eager result shares with raw built on the normalized key. */
     EVDD nlow = low;
     EVDD nhigh = high;
-    nlow.w = EVDD_VALUE_ONE;
+    nlow.w = one_int(ti);
     nhigh.w = EVDDWHIGH(e.node);
     EVDD raw_norm = evdd_makenode_raw(2, nlow, nhigh);
     EXPECT(raw_norm.node == e.node, "makenode and raw agree on normalized key");
@@ -776,17 +790,16 @@ static void test_evdd_normalize(void) {
 
     EXPECT(evdd_init(128) == 0, "normalize: evdd_init");
 
-    EVDD f = evdd_false();
-    EVDD t = evdd_true();
-    EVDD cf = evdd_normalize(f);
-    EVDD ct = evdd_normalize(t);
-    EXPECT(cf.node == EVDD_FALSE_NODE && cf.w == EVDD_VALUE_ONE,
-           "normalize false is false");
-    EXPECT(ct.node == EVDD_TRUE_NODE && ct.w == EVDD_VALUE_ONE,
-           "normalize true is true");
-
     evdd_value_type ti = register_int_type();
     evdd_set_normalization(ti, EVDD_NORMALIZE_FIRST_NONZERO);
+
+    EVDD f = evdd_false();
+    EVDD t = unit_const_int(ti);
+    EVDD cf = evdd_normalize(f);
+    EVDD ct = evdd_normalize(t);
+    EXPECT(EVDDISFALSE(cf), "normalize false is false");
+    EXPECT(ct.node == EVDD_TRUE_NODE && evdd_value_is_one(ct.w),
+           "normalize unit const is unit");
 
     EVDD low = f;
     EVDD high = t;
@@ -830,28 +843,31 @@ static void test_evdd_normalize(void) {
      * Diamond: left and right both point at the same mid. After normalize,
      * the shared child must still be one node (memo + unique table).
      *
+     * Mid edges both go to the 1-terminal (zero is a weight, not a sink).
+     * Weights (1,2) keep FIRST_NONZERO incoming at 1 so left's (mid,true)
+     * pair does not hit integer truncation (2,1) -> (1,0).
+     *
      *        top
      *       /   \
      *    left   right
      *       \   /
      *        mid
      */
-    EVDD mid_l = f;
+    EVDD mid_l = t;
     EVDD mid_h = t;
-    mid_l.w = intern_int(ti, 2);
-    mid_h.w = intern_int(ti, 4);
+    mid_l.w = one_int(ti);
+    mid_h.w = intern_int(ti, 2);
     EVDD mid = evdd_makenode_raw(0, mid_l, mid_h);
 
     EVDD left_l = mid;
     EVDD left_h = t;
-    left_l.w = EVDD_VALUE_ONE;
-    left_h.w = EVDD_VALUE_ONE;
+    left_l.w = one_int(ti);
+    left_h.w = one_int(ti);
     EVDD left = evdd_makenode_raw(1, left_l, left_h);
 
     EVDD right_l = mid;
-    EVDD right_h = f;
-    right_l.w = EVDD_VALUE_ONE;
-    right_h.w = EVDD_VALUE_ONE;
+    EVDD right_h = f; /* (TRUE, ZERO) */
+    right_l.w = one_int(ti);
     EVDD right = evdd_makenode_raw(1, right_l, right_h);
 
     EXPECT(EVDDLOW(left.node) == mid.node && EVDDLOW(right.node) == mid.node,
@@ -859,8 +875,8 @@ static void test_evdd_normalize(void) {
 
     EVDD dtop_l = left;
     EVDD dtop_r = right;
-    dtop_l.w = EVDD_VALUE_ONE;
-    dtop_r.w = EVDD_VALUE_ONE;
+    dtop_l.w = one_int(ti);
+    dtop_r.w = one_int(ti);
     EVDD diamond_raw = evdd_makenode_raw(2, dtop_l, dtop_r);
 
     EVDD mid_e2 = evdd_makenode(0, mid_l, mid_h);
@@ -889,8 +905,9 @@ static void test_evdd_refs_gbc(void) {
 
     EXPECT(evdd_init(64) == 0, "refs_gbc: evdd_init");
 
+    evdd_value_type ti = register_int_type();
     EVDD f = evdd_false();
-    EVDD t = evdd_true();
+    EVDD t = unit_const_int(ti);
     EVDD keep = evdd_makenode_raw(0, f, t);
     EVDD drop = evdd_makenode_raw(1, f, t);
     int drop_node = drop.node;
@@ -903,9 +920,9 @@ static void test_evdd_refs_gbc(void) {
     EXPECT(evddnodes[keep.node].refcou == 1, "addref bumps root refcou");
 
     EVDD still_false = evdd_addref(f);
-    EXPECT(still_false.node == EVDD_FALSE_NODE &&
-               evddnodes[EVDD_FALSE_NODE].refcou == EVDD_MAXREF,
-           "addref on sink is a no-op (stays MAXREF)");
+    EXPECT(EVDDISFALSE(still_false) &&
+               evddnodes[EVDD_TRUE_NODE].refcou == EVDD_MAXREF,
+           "addref on false edge is a no-op (terminal stays MAXREF)");
 
     free_before = evddfreenum;
     evdd_gbc();
@@ -923,15 +940,16 @@ static void test_evdd_refs_gbc(void) {
     EXPECT(EVDDISFREE(keep.node), "gbc frees node after last delref");
 
     evdd_done();
+    teardown_values();
 }
 
-/** Path product at a sink edge: FALSE → 0, TRUE → w. */
+/** Path product at a constant edge: zero weight → 0, else w. */
 static int path_value_int(EVDD e) {
-    if (e.node == EVDD_FALSE_NODE)
+    if (!EVDDISCONST(e.node))
+        return -1;
+    if (evdd_value_is_zero(e.w))
         return 0;
-    if (e.node == EVDD_TRUE_NODE)
-        return get_int(e.w);
-    return -1; /* not a constant edge */
+    return get_int(e.w);
 }
 
 static void test_evdd_apply(void) {
@@ -942,7 +960,7 @@ static void test_evdd_apply(void) {
     evdd_set_normalization(ti, EVDD_NORMALIZE_FIRST_NONZERO);
 
     EVDD f = evdd_false();
-    EVDD t = evdd_true();
+    EVDD t = unit_const_int(ti);
 
     EVDD tw = t;
     tw.w = intern_int(ti, 2);
@@ -956,8 +974,12 @@ static void test_evdd_apply(void) {
     EXPECT(add_c.node == EVDD_TRUE_NODE && get_int(add_c.w) == 5,
            "apply add on TRUE edges adds weights");
 
+    EVDD add_tt = evdd_apply(t, t, evdd_value_add);
+    EXPECT(add_tt.node == EVDD_TRUE_NODE && get_int(add_tt.w) == 2,
+           "apply(unit,unit,add) is true with weight 2");
+
     EVDD z = evdd_apply(f, tw, evdd_value_mul);
-    EXPECT(z.node == EVDD_FALSE_NODE, "apply mul with FALSE is FALSE");
+    EXPECT(EVDDISFALSE(z), "apply mul with FALSE is FALSE");
 
     /* a: low=0, high=2; b: low=2, high=4 (divides cleanly under first-nonzero).
        mul → low=0, high=8. */
@@ -1010,9 +1032,7 @@ static void test_evdd_apply(void) {
 static EVDD evdd_const_dbl(evdd_value_type td, double v) {
     if (v == 0.0)
         return evdd_false();
-    EVDD e = evdd_true();
-    e.w = intern_dbl(td, v);
-    return e;
+    return evdd_const(intern_dbl(td, v));
 }
 
 static EVDD test_scalar_mul_dbl(EVDD f, evdd_value_type td, double c) {
@@ -1033,11 +1053,11 @@ static EVDD test_gate_x_level(unsigned level, EVDD state) {
 }
 
 static double path_value_dbl(EVDD e) {
-    if (e.node == EVDD_FALSE_NODE)
+    if (!EVDDISCONST(e.node))
+        return -1.0;
+    if (evdd_value_is_zero(e.w))
         return 0.0;
-    if (e.node == EVDD_TRUE_NODE)
-        return get_dbl(e.w);
-    return -1.0;
+    return get_dbl(e.w);
 }
 
 static void amps_level0_dbl(EVDD s, double *a0, double *a1) {
@@ -1103,8 +1123,10 @@ static void test_evdd_gates(void) {
     EVDD q1_ket0 = evdd_makenode(1, evdd_const_dbl(td, 1.0), f);
     EVDD ket10 = evdd_makenode(0, f, q1_ket0);
     EVDD after_x0 = test_gate_x_level(0, ket10);
-    EXPECT(EVDDLEVEL(after_x0.node) == 0 && EVDDHIGH(after_x0.node) == EVDD_FALSE_NODE,
-           "X on q0 sends |10> to |00|-shaped node (high is FALSE)");
+    EXPECT(EVDDLEVEL(after_x0.node) == 0 &&
+               EVDDHIGH(after_x0.node) == EVDD_TRUE_NODE &&
+               evdd_value_is_zero(EVDDWHIGH(after_x0.node)),
+           "X on q0 sends |10> to |00|-shaped node (high weight 0)");
     {
         EVDD low;
         low.node = EVDDLOW(after_x0.node);
@@ -1138,12 +1160,11 @@ static void test_evdd_dot(void) {
     evdd_set_normalization(ti, EVDD_NORMALIZE_FIRST_NONZERO);
 
     EVDD f = evdd_false();
-    EVDD t = evdd_true();
+    EVDD t = unit_const_int(ti);
     EVDD hi = t;
     hi.w = intern_int(ti, 4);
     EVDD n = evdd_makenode(0, f, hi);
-    /* first-nonzero: factor 1 on low? low is FALSE with w=ONE → factor ONE,
-       high 4. Incoming on n may be ONE. */
+    /* first-nonzero: low is (TRUE, ZERO), high weight 4 → factor from high. */
 
     char *buf = NULL;
     size_t buflen = 0;
@@ -1161,7 +1182,7 @@ static void test_evdd_dot(void) {
     EXPECT(buf_contains(buf, "label=\"0\""), "dot: level label on node");
     /* high weight 4 appears as edge label (to_str from int type) */
     EXPECT(buf_contains(buf, "4"), "dot: prints weight 4 on an edge");
-    EXPECT(buf_contains(buf, "shape=box, label=\"0\""), "dot: false terminal shown");
+    EXPECT(buf_contains(buf, "shape=box, label=\"1\""), "dot: sole 1-terminal shown");
 
     /* Marks cleared: second print still works and produces digraph. */
     char *buf2 = NULL;
@@ -1173,7 +1194,7 @@ static void test_evdd_dot(void) {
     }
     EXPECT(buf_contains(buf2, "digraph G"), "dot: second print after unmark");
 
-    /* hide_zeros: no false terminal, no dashed edge into 0 */
+    /* hide_zeros: omit zero-weight edges */
     char *buf3 = NULL;
     size_t buflen3 = 0;
     FILE *mem3 = open_memstream(&buf3, &buflen3);
@@ -1185,8 +1206,7 @@ static void test_evdd_dot(void) {
     EXPECT(buf_contains(buf3, "style=solid"), "dot hide0: high edge kept");
     EXPECT(buf_contains(buf3, "4"), "dot hide0: weight 4 kept");
     EXPECT(!buf_contains(buf3, "style=dashed"), "dot hide0: no zero-weight low edge");
-    EXPECT(!buf_contains(buf3, "shape=box, label=\"0\""),
-           "dot hide0: false terminal omitted");
+    EXPECT(buf_contains(buf3, "shape=box, label=\"1\""), "dot hide0: 1-terminal kept");
 
     free(buf);
     free(buf2);
