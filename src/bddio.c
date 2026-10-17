@@ -43,6 +43,9 @@
 #include "kernel.h"
 #include <stdbool.h>
 #include "mtbdd.h"
+#include "evdd.h"
+#include "evdd_kernel.h"
+#include "evdd_value.h"
 
 
 static void bdd_printset_rec(FILE *, int, int *);
@@ -451,6 +454,122 @@ void buddy_mtbdd_fprintdot_rec(FILE* ofile, BDD r) {
          buddy_mtbdd_fprintdot_rec(ofile, HIGH(r));
    }
 
+}
+
+
+/*=== EVDD DOT =========================================================*/
+
+static void evdd_fprint_value_id(FILE *ofile, evdd_value_id id)
+{
+   char *buf;
+   size_t bufsz = 128;
+   evdd_value_type t;
+   evdd_value_to_str_function_t tostr;
+
+   if (id == EVDD_VALUE_ZERO) {
+      fputs("0", ofile);
+      return;
+   }
+
+   t = evdd_value_get_type(id);
+   tostr = EVDDVALUETOSTR(t);
+   if (tostr == NULL || evdd_value_get(id) == NULL) {
+      fprintf(ofile, "v%u", (unsigned)id);
+      return;
+   }
+
+   buf = (char *)malloc(bufsz);
+   if (buf == NULL) {
+      fprintf(ofile, "v%u", (unsigned)id);
+      return;
+   }
+   buf = tostr(evdd_value_get(id), buf, bufsz);
+   fputs(buf ? buf : "?", ofile);
+   free(buf);
+}
+
+/** Skip edge when hide_zeros and weight is zero. */
+static int evdd_dot_hide_edge(int hide_zeros, evdd_value_id w, int child)
+{
+   (void)child;
+   if (!hide_zeros)
+      return 0;
+   return evdd_value_is_zero(w);
+}
+
+static void evdd_fprintdot_rec(FILE *ofile, int node, int hide_zeros)
+{
+   int low, high;
+   evdd_value_id wlow, whigh;
+
+   if (EVDDISCONST(node) || EVDDISFREE(node) || EVDDMARKED(node))
+      return;
+
+   low = EVDDLOW(node);
+   high = EVDDHIGH(node);
+   wlow = EVDDWLOW(node);
+   whigh = EVDDWHIGH(node);
+
+   fprintf(ofile, "%d [label=\"%u\"];\n", node, EVDDLEVEL(node));
+
+   if (!evdd_dot_hide_edge(hide_zeros, wlow, low)) {
+      fprintf(ofile, "%d -> %d [style=dashed, label=\"", node, low);
+      evdd_fprint_value_id(ofile, wlow);
+      fprintf(ofile, "\"];\n");
+   }
+   if (!evdd_dot_hide_edge(hide_zeros, whigh, high)) {
+      fprintf(ofile, "%d -> %d [style=solid, label=\"", node, high);
+      evdd_fprint_value_id(ofile, whigh);
+      fprintf(ofile, "\"];\n");
+   }
+
+   EVDDSETMARK(node);
+   if (!evdd_dot_hide_edge(hide_zeros, wlow, low))
+      evdd_fprintdot_rec(ofile, low, hide_zeros);
+   if (!evdd_dot_hide_edge(hide_zeros, whigh, high))
+      evdd_fprintdot_rec(ofile, high, hide_zeros);
+}
+
+void evdd_fprintdot(FILE *ofile, EVDD root, int hide_zeros)
+{
+   if (!evddrunning || ofile == NULL)
+      return;
+
+   fprintf(ofile, "digraph G {\n");
+   fprintf(ofile,
+           "%d [shape=box, label=\"1\", style=filled, height=0.3, "
+           "width=0.3];\n",
+           EVDD_TRUE_NODE);
+   fprintf(ofile, "root [shape=point, width=0.0, label=\"\"];\n");
+
+   if (!evdd_dot_hide_edge(hide_zeros, root.w, root.node)) {
+      fprintf(ofile, "root -> %d [label=\"", root.node);
+      evdd_fprint_value_id(ofile, root.w);
+      fprintf(ofile, "\"];\n");
+      evdd_fprintdot_rec(ofile, root.node, hide_zeros);
+      evdd_unmark(root.node);
+   }
+
+   fprintf(ofile, "}\n");
+}
+
+void evdd_printdot(EVDD root, int hide_zeros)
+{
+   evdd_fprintdot(stdout, root, hide_zeros);
+}
+
+int evdd_fnprintdot(char *fname, EVDD root, int hide_zeros)
+{
+   FILE *ofile;
+
+   if (fname == NULL)
+      return bdd_error(BDD_FILE);
+   ofile = fopen(fname, "w");
+   if (ofile == NULL)
+      return bdd_error(BDD_FILE);
+   evdd_fprintdot(ofile, root, hide_zeros);
+   fclose(ofile);
+   return 0;
 }
 
 

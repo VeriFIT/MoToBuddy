@@ -31,7 +31,7 @@ The build system fetches [nlohmann/json](https://github.com/nlohmann/json) autom
 
 ### Testing
 
-Each example directory carries a `runtest` script and (mostly) an `expected` output. `make build` followed by `make test` runs them all through `examples/check.sh`, which prints PASSED/FAILED per example and exits non-zero on any failure. Individual examples can be selected by name, e.g. `examples/check.sh mtbddtest quantum_gates`. The same script is what CI runs.
+Each example (and `tests/`) directory carries a `runtest` script and (mostly) an `expected` output. `make build` followed by `make test` runs `examples/check.sh` then `tests/check.sh`, which print PASSED/FAILED per suite and exit non-zero on any failure. Individual suites can be selected by name, e.g. `examples/check.sh mtbddtest quantum_gates` or `tests/check.sh evddtest`. CI runs the same `make test` path.
 
 `make coverage` rebuilds with gcov instrumentation, runs the suites and writes a Cobertura report for `src/` to `coverage.xml` (needs `gcovr`). CI uploads the same report to Codecov.
 
@@ -211,6 +211,9 @@ doc/
   mosf.mosf             -- MOSF format reference and examples
 examples/
   quantum_gates/        -- CX, CCX, MOSF quantum gate demo
+  mtbddtest/            -- MTBDD unit tests
+tests/
+  evddtest/             -- EVDD value-layer unit tests
 ```
 
 ---

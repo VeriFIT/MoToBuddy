@@ -1,0 +1,309 @@
+MoToBuddy EVDD value test suite
+
+== type registry ==
+PASS: registry starts empty
+PASS: new types are 0, 1, …
+PASS: type_number is live count
+PASS: type_size is allocated capacity
+PASS: functions list allocated
+PASS: four types registered
+PASS: capacity grew for fourth type
+
+== register callbacks ==
+PASS: hash registered
+PASS: compare registered
+PASS: free registered
+PASS: to_str registered
+PASS: mul registered
+PASS: div registered
+PASS: add registered
+PASS: sub registered
+PASS: is_zero registered
+PASS: is_one registered
+PASS: abs_cmp registered
+PASS: abs_sq registered
+PASS: sqrt registered
+Error: invalid value type 2 passed to evdd_register_hash_function.
+PASS: register rejects type == type_number
+
+== types_done / reinit ==
+PASS: types_done frees the list
+PASS: types_done resets counters
+PASS: new_type works after types_done
+
+== intern uniquing ==
+PASS: interned payload is not bare ZERO
+PASS: equal values intern to the same id
+PASS: distinct values get distinct ids
+PASS: get returns stored int
+PASS: get_type preserves type
+PASS: get_type on second value
+PASS: NULL intern maps to ZERO
+PASS: is_zero payload collapses to ZERO
+PASS: is_one payload stays typed and is_one
+PASS: typed ones uniquify
+PASS: get(ZERO) is NULL
+PASS: get(typed one) is non-NULL
+
+== intern hash index scale ==
+PASS: allocate id scratch for scale test
+PASS: zero still collapses with hash index
+PASS: all 20k payloads round-trip after index grows
+PASS: all 20k non-zero values got distinct ValueIDs
+PASS: evddValueUsed counts every non-zero intern
+PASS: sparse re-intern hits index after multiple grows
+PASS: first and last re-intern hit after scale
+
+== intern hash index grow boundary ==
+PASS: values around grow thresholds still resolve
+PASS: pre-grow ids stay stable and findable after grows
+
+== intern types do not alias ==
+PASS: same payload, different type_ids, distinct ValueIDs
+PASS: each id keeps its type
+
+== intern hash collision ==
+PASS: equal hashes still intern separately when compare differs
+PASS: collision chain re-intern finds the right payload
+
+== intern long collision chain ==
+PASS: allocate scratch for collision-chain test
+PASS: 800 same-hash values distinct and re-findable via probe
+PASS: mid-chain dedup returns live id
+PASS: mid-chain dedup frees the unused payload
+
+== intern clustered hash ==
+PASS: low-bit hash clusters still resolve after grow
+
+== intern no-hash linear fallback ==
+PASS: no-hash interns distinct values
+PASS: no-hash re-intern dedups via linear scan
+
+== intern two types share index ==
+PASS: allocate scratch for two-type index test
+PASS: same payloads on two types never alias; both index-hits
+
+== intern index cleared by value_done ==
+PASS: value_done resets intern counters (index wiped too)
+PASS: intern after value_done rebuilds index
+PASS: re-intern after rebuild hits new index
+
+== intern dedup / freefun ==
+PASS: first intern does not free the live payload
+PASS: dedup returns the live id
+PASS: dedup calls freefun on the unused payload
+PASS: value_done calls freefun on remaining rows
+
+== value_done resets intern ==
+PASS: intern increments evddValueUsed
+PASS: value_done resets evddValueUsed
+PASS: intern works again after value_done
+
+== is_zero / is_one ==
+PASS: ZERO is zero
+PASS: ZERO is not one
+PASS: typed ONE is one
+PASS: typed ONE is not zero
+PASS: typed 5 is neither zero nor one
+
+== algebra on ids ==
+PASS: algebra operands interned
+PASS: mul 2*3 interned as 6
+PASS: mul by ONE is identity
+PASS: ONE*x is x
+PASS: mul by ZERO absorbs
+PASS: ZERO*x absorbs
+PASS: ZERO*ONE is ZERO
+PASS: add 2+3
+PASS: add ZERO is identity
+PASS: add ONE+typed
+PASS: add ONE+ONE
+PASS: sub 6-2
+PASS: sub x-x collapses to ZERO
+PASS: sub ZERO-typed
+PASS: sub ONE-ONE is ZERO
+PASS: div 6/2
+PASS: div by ONE is identity
+PASS: ZERO / x is ZERO
+PASS: div ONE/ONE is ONE
+Error: EVDD value division by zero
+PASS: div by ZERO is a hard error
+
+== mixed-type ops error ==
+Error: mixed EVDD value types 0 and 1
+PASS: mul mixed types is a hard error
+PASS: mixed mul does not intern a product
+Error: mixed EVDD value types 0 and 1
+PASS: add mixed types is a hard error
+Error: mixed EVDD value types 0 and 1
+PASS: normalize mixed types is a hard error
+
+== normalize first-nonzero ==
+PASS: first-nonzero accepted with mul/div/is_zero
+PASS: built-in normalizefun installed
+PASS: nonzero low becomes ONE
+PASS: high divided by low
+PASS: incoming is the low factor
+PASS: zero low: high becomes ONE
+PASS: incoming is the high factor
+PASS: negative low still factors
+PASS: high / low keeps sign
+PASS: incoming keeps the low value
+PASS: both zero: all ZERO
+
+== normalize low-edge ==
+PASS: low-edge strategy accepted
+PASS: nonzero low: same as first-nonzero
+PASS: zero low: keep high, incoming ONE (no high fallback)
+
+== normalize max-magnitude ==
+PASS: larger |w| edge becomes ONE
+PASS: other edge divided by max
+PASS: incoming is the max-magnitude value
+PASS: divide by the actual max-mag edge (keep sign)
+PASS: other / -5
+PASS: incoming is -5
+PASS: tie: prefer low
+PASS: tie: high / low
+PASS: tie: incoming is low
+
+== normalize L2 ==
+PASS: L2 (3,4) -> (0.6, 0.8)
+PASS: L2 incoming is the norm
+PASS: L2 need not produce a unit edge
+
+== normalize custom + freeze ==
+PASS: custom normalizefun registered
+PASS: CUSTOM accepted when normalizefun is set
+PASS: CUSTOM freezes
+PASS: custom: high becomes ONE
+PASS: custom: low / high
+PASS: custom: incoming is high
+Error: normalization already frozen for type 0
+PASS: second set_normalization is a hard error
+PASS: frozen strategy is unchanged
+
+== set_normalization missing callbacks ==
+Error: missing callbacks for normalization strategy on type 0
+PASS: first-nonzero without mul/div/is_zero errors
+PASS: failed set does not freeze
+Error: missing callbacks for normalization strategy on type 1
+PASS: L2 without sqrt/abs_sq/add errors
+PASS: failed L2 does not freeze
+Error: missing callbacks for normalization strategy on type 2
+PASS: CUSTOM without normalizefun errors
+
+== two types, two norms ==
+PASS: different types may freeze different strategies
+PASS: int-typed diagram uses first-nonzero
+PASS: double-typed diagram uses L2
+
+== independent of bdd_init ==
+PASS: bdd is not running
+PASS: intern works without bdd_init
+
+== node table init ==
+PASS: EvddNode is 28 bytes
+PASS: evdd starts idle
+PASS: evdd_init succeeds
+PASS: evdd_isrunning after init
+PASS: table allocated at prime size
+PASS: freelist starts at 1 with size-1 free nodes
+PASS: 1-terminal is pinned MAXREF
+PASS: 1-terminal sits at MAXLEVEL
+PASS: 1-terminal points to itself
+PASS: first free slot has low==-1
+PASS: evdd_false is (TRUE, ZERO)
+PASS: evdd_const(typed 1) is (TRUE, one)
+PASS: second evdd_init without done errors
+PASS: evdd_done frees the table
+PASS: re-init after done works
+PASS: evdd_init does not start bdd
+
+== makenode_raw ==
+PASS: makenode_raw: evdd_init
+PASS: raw returns (unit, node>=1)
+PASS: raw stores level and child node ids
+PASS: raw stores child edge weights on the node
+PASS: raw unique hit shares node
+PASS: raw skip-reduces equal children to that edge
+PASS: eager skip-reduces equal children to that edge
+PASS: raw skip-reduce keeps common edge weight
+PASS: eager skip-reduce folds normalized incoming onto edge
+PASS: raw skip-reduce to false is canonical evdd_false
+PASS: raw keeps unnormalized weights and uniquifies them
+PASS: different outgoing weight => different node
+PASS: makenode weight-normalizes then calls raw
+PASS: makenode high weight is w_high/incoming
+PASS: makenode and raw agree on normalized key
+
+== evdd_normalize ==
+PASS: normalize: evdd_init
+PASS: normalize false is false
+PASS: normalize unit const is unit
+PASS: normalize(raw) matches eager makenode (single node)
+PASS: normalize(raw DAG) matches eager makenode throughout
+PASS: normalize multiplies root incoming weight
+PASS: diamond raw: left and right share mid
+PASS: normalize(diamond) matches eager makenode
+PASS: diamond: left and right stay distinct nodes
+PASS: diamond: shared mid remains one node after normalize
+PASS: diamond: shared child is the eager-normalized mid
+
+== refs / gbc ==
+PASS: refs_gbc: evdd_init
+PASS: new nodes start with refcou 0
+PASS: addref bumps root refcou
+PASS: addref on false edge is a no-op (terminal stays MAXREF)
+PASS: gbc frees unreachable node
+PASS: gbc keeps addref'd root
+PASS: gbc increases freelist
+PASS: unique hit still works after gbc
+PASS: delref drops refcou to 0
+PASS: gbc frees node after last delref
+
+== evdd_apply ==
+PASS: apply: evdd_init
+PASS: apply mul on TRUE edges multiplies weights
+PASS: apply add on TRUE edges adds weights
+PASS: apply(unit,unit,add) is true with weight 2
+PASS: apply mul with FALSE is FALSE
+PASS: apply cache returns same edge on second call
+PASS: apply mul: low path value is 0
+PASS: apply mul: high path value is 8
+PASS: apply mul: scale level-1 diagram by constant 2
+
+== evdd gate-style ==
+PASS: gates: evdd_init
+PASS: ket0 amplitudes (1,0)
+PASS: ket1 amplitudes (0,1)
+PASS: X|0> = |1>
+PASS: X|1> = |0>
+PASS: X maps basis states onto each other (unique table)
+PASS: scalar mul 3|1> amplitudes (0,3)
+PASS: psi amplitudes (2,4)
+PASS: X|psi> swaps amplitudes
+PASS: X on q0 sends |10> to |00|-shaped node (high weight 0)
+PASS: X|10> low cofactor is |0> on q1 with amp 1
+PASS: apply-add builds 2|0>+3|1>
+
+== evdd_printdot ==
+PASS: dot: evdd_init
+PASS: dot: open_memstream
+PASS: dot: digraph header
+PASS: dot: root incoming edge
+PASS: dot: low edge dashed
+PASS: dot: high edge solid
+PASS: dot: level label on node
+PASS: dot: prints weight 4 on an edge
+PASS: dot: sole 1-terminal shown
+PASS: dot: second print after unmark
+PASS: dot hide0: digraph header
+PASS: dot hide0: high edge kept
+PASS: dot hide0: weight 4 kept
+PASS: dot hide0: no zero-weight low edge
+PASS: dot hide0: 1-terminal kept
+
+----------------------------------------
+passed=229 failed=0
+All tests passed.
