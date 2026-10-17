@@ -329,22 +329,93 @@ static void test_intern_uniquing(void) {
     teardown_values();
 }
 
-static void test_intern_types_dont_alias(void) {
-    printf("\n== intern types do not alias ==\n");
-    evdd_value_type ta = register_int_type();
-    evdd_value_type tb = register_int_type();
+static void test_intern_hash_index_scale(void) {
+    printf("\n== intern hash index scale ==\n");
+    evdd_value_type t = register_int_type();
+    /* Past initial idx cap (1024) and at least one grow (2048+). */
+    const int n = 20000;
+    evdd_value_id *ids = (evdd_value_id *)malloc((size_t)(n + 1) * sizeof(*ids));
+    int i;
+    int ok_unique = 1;
+    int ok_roundtrip = 1;
+    int ok_rehit = 1;
 
-    evdd_value_id a = intern_int(ta, 5);
-    evdd_value_id b = intern_int(tb, 5);
-    EXPECT(a != b, "same payload, different type_ids, distinct ValueIDs");
-    EXPECT(evdd_value_get_type(a) == ta && evdd_value_get_type(b) == tb,
-           "each id keeps its type");
+    EXPECT(ids != NULL, "allocate id scratch for scale test");
+    if (ids == NULL) {
+        teardown_values();
+        return;
+    }
+
+    EXPECT(intern_int(t, 0) == EVDD_VALUE_ZERO,
+           "zero still collapses with hash index");
+
+    for (i = 1; i <= n; i++)
+        ids[i] = intern_int(t, i);
+
+    for (i = 1; i <= n; i++) {
+        if (get_int(ids[i]) != i)
+            ok_roundtrip = 0;
+        if (ids[i] == EVDD_VALUE_ZERO)
+            ok_unique = 0;
+    }
+    for (i = 1; i < n; i++) {
+        if (ids[i] == ids[i + 1])
+            ok_unique = 0;
+    }
+
+    EXPECT(ok_roundtrip, "all 20k payloads round-trip after index grows");
+    EXPECT(ok_unique, "all 20k non-zero values got distinct ValueIDs");
+    EXPECT(evddValueUsed == n, "evddValueUsed counts every non-zero intern");
+
+    for (i = 1; i <= n; i += 97) {
+        if (intern_int(t, i) != ids[i])
+            ok_rehit = 0;
+    }
+    EXPECT(ok_rehit, "sparse re-intern hits index after multiple grows");
+    EXPECT(intern_int(t, 1) == ids[1] && intern_int(t, n) == ids[n],
+           "first and last re-intern hit after scale");
+
+    free(ids);
+    teardown_values();
+}
+
+static void test_intern_hash_index_grow_boundary(void) {
+    printf("\n== intern hash index grow boundary ==\n");
+    evdd_value_type t = register_int_type();
+    /* Load factor triggers grow when 2*(cnt+1) > cap; first grow at cnt=512
+     * with cap=1024. Cross 512, 1024, 2048 and re-check early ids. */
+    const int checkpoints[] = {500, 512, 513, 1000, 1024, 1025, 2000, 2048, 2049};
+    evdd_value_id early[3];
+    int i, c;
+    int ok = 1;
+
+    early[0] = intern_int(t, 1);
+    early[1] = intern_int(t, 2);
+    early[2] = intern_int(t, 3);
+
+    for (i = 4; i <= 2100; i++)
+        (void)intern_int(t, i);
+
+    for (c = 0; c < (int)(sizeof(checkpoints) / sizeof(checkpoints[0])); c++) {
+        int v = checkpoints[c];
+        if (get_int(intern_int(t, v)) != v)
+            ok = 0;
+    }
+    EXPECT(ok, "values around grow thresholds still resolve");
+    EXPECT(intern_int(t, 1) == early[0] && intern_int(t, 2) == early[1] &&
+               intern_int(t, 3) == early[2],
+           "pre-grow ids stay stable and findable after grows");
     teardown_values();
 }
 
 static unsigned const_hash(void *a) {
     (void)a;
     return 1u;
+}
+
+static unsigned low_bits_hash(void *a) {
+    /* Force many values into a few start slots (stress linear probe). */
+    return (unsigned)int_val(a) & 0xfu;
 }
 
 static void test_intern_hash_collision(void) {
@@ -360,6 +431,159 @@ static void test_intern_hash_collision(void) {
     evdd_value_id b = intern_int(t, 20);
     EXPECT(a != b && get_int(a) == 10 && get_int(b) == 20,
            "equal hashes still intern separately when compare differs");
+    EXPECT(intern_int(t, 10) == a && intern_int(t, 20) == b,
+           "collision chain re-intern finds the right payload");
+    teardown_values();
+}
+
+static void test_intern_long_collision_chain(void) {
+    printf("\n== intern long collision chain ==\n");
+    evdd_value_type t = evdd_new_value_type();
+    const int n = 800;
+    evdd_value_id *ids = (evdd_value_id *)malloc((size_t)(n + 1) * sizeof(*ids));
+    int i;
+    int ok = 1;
+
+    evdd_register_hash_function(t, const_hash);
+    evdd_register_compare_function(t, int_cmp);
+    evdd_register_free_function(t, int_free_internals);
+    evdd_register_is_zero_function(t, int_is_zero);
+    evdd_register_is_one_function(t, int_is_one);
+
+    EXPECT(ids != NULL, "allocate scratch for collision-chain test");
+    if (ids == NULL) {
+        teardown_values();
+        return;
+    }
+
+    for (i = 1; i <= n; i++)
+        ids[i] = intern_int(t, i);
+
+    for (i = 1; i <= n; i++) {
+        if (intern_int(t, i) != ids[i] || get_int(ids[i]) != i)
+            ok = 0;
+    }
+    EXPECT(ok, "800 same-hash values distinct and re-findable via probe");
+
+    g_freefun_calls = 0;
+    EXPECT(intern_int(t, n / 2) == ids[n / 2], "mid-chain dedup returns live id");
+    EXPECT(g_freefun_calls == 1, "mid-chain dedup frees the unused payload");
+
+    free(ids);
+    teardown_values();
+}
+
+static void test_intern_clustered_hash(void) {
+    printf("\n== intern clustered hash ==\n");
+    evdd_value_type t = evdd_new_value_type();
+    const int n = 4000;
+    int i;
+    int ok = 1;
+
+    evdd_register_hash_function(t, low_bits_hash);
+    evdd_register_compare_function(t, int_cmp);
+    evdd_register_free_function(t, int_free_internals);
+    evdd_register_is_zero_function(t, int_is_zero);
+    evdd_register_is_one_function(t, int_is_one);
+
+    for (i = 1; i <= n; i++)
+        (void)intern_int(t, i);
+    for (i = 1; i <= n; i += 16) {
+        if (get_int(intern_int(t, i)) != i)
+            ok = 0;
+    }
+    EXPECT(ok, "low-bit hash clusters still resolve after grow");
+    teardown_values();
+}
+
+static void test_intern_no_hash_fallback(void) {
+    printf("\n== intern no-hash linear fallback ==\n");
+    evdd_value_type t = evdd_new_value_type();
+    evdd_value_id a, b, a2;
+
+    /* No hash callback: must use linear scan of evddValues. */
+    evdd_register_compare_function(t, int_cmp);
+    evdd_register_free_function(t, int_free_internals);
+    evdd_register_is_zero_function(t, int_is_zero);
+    evdd_register_is_one_function(t, int_is_one);
+
+    a = intern_int(t, 11);
+    b = intern_int(t, 22);
+    a2 = intern_int(t, 11);
+    EXPECT(a != EVDD_VALUE_ZERO && b != a && get_int(b) == 22,
+           "no-hash interns distinct values");
+    EXPECT(a2 == a && get_int(a) == 11, "no-hash re-intern dedups via linear scan");
+    teardown_values();
+}
+
+static void test_intern_two_types_index(void) {
+    printf("\n== intern two types share index ==\n");
+    evdd_value_type ta = register_int_type();
+    evdd_value_type tb = register_int_type();
+    const int n = 3000;
+    evdd_value_id *ida = (evdd_value_id *)malloc((size_t)(n + 1) * sizeof(*ida));
+    evdd_value_id *idb = (evdd_value_id *)malloc((size_t)(n + 1) * sizeof(*idb));
+    int i;
+    int ok = 1;
+
+    EXPECT(ida != NULL && idb != NULL, "allocate scratch for two-type index test");
+    if (ida == NULL || idb == NULL) {
+        free(ida);
+        free(idb);
+        teardown_values();
+        return;
+    }
+
+    for (i = 1; i <= n; i++) {
+        ida[i] = intern_int(ta, i);
+        idb[i] = intern_int(tb, i);
+    }
+    for (i = 1; i <= n; i++) {
+        if (ida[i] == idb[i])
+            ok = 0;
+        if (intern_int(ta, i) != ida[i] || intern_int(tb, i) != idb[i])
+            ok = 0;
+        if (evdd_value_get_type(ida[i]) != ta || evdd_value_get_type(idb[i]) != tb)
+            ok = 0;
+    }
+    EXPECT(ok, "same payloads on two types never alias; both index-hits");
+    free(ida);
+    free(idb);
+    teardown_values();
+}
+
+static void test_intern_index_survives_value_done(void) {
+    printf("\n== intern index cleared by value_done ==\n");
+    evdd_value_type t = register_int_type();
+    evdd_value_id a, b;
+    int i;
+
+    for (i = 1; i <= 1500; i++)
+        (void)intern_int(t, i);
+    a = intern_int(t, 42);
+
+    evdd_value_done();
+    EXPECT(evddValueUsed == 0 && evddLastValueIndex == 0,
+           "value_done resets intern counters (index wiped too)");
+
+    b = intern_int(t, 42);
+    EXPECT(b != EVDD_VALUE_ZERO && get_int(b) == 42,
+           "intern after value_done rebuilds index");
+    EXPECT(intern_int(t, 42) == b, "re-intern after rebuild hits new index");
+    (void)a; /* pre-done id is dangling; do not use */
+    teardown_values();
+}
+
+static void test_intern_types_dont_alias(void) {
+    printf("\n== intern types do not alias ==\n");
+    evdd_value_type ta = register_int_type();
+    evdd_value_type tb = register_int_type();
+
+    evdd_value_id a = intern_int(ta, 5);
+    evdd_value_id b = intern_int(tb, 5);
+    EXPECT(a != b, "same payload, different type_ids, distinct ValueIDs");
+    EXPECT(evdd_value_get_type(a) == ta && evdd_value_get_type(b) == tb,
+           "each id keeps its type");
     teardown_values();
 }
 
@@ -1227,8 +1451,15 @@ int main(void) {
     test_register_callbacks();
     test_types_done_reinit();
     test_intern_uniquing();
+    test_intern_hash_index_scale();
+    test_intern_hash_index_grow_boundary();
     test_intern_types_dont_alias();
     test_intern_hash_collision();
+    test_intern_long_collision_chain();
+    test_intern_clustered_hash();
+    test_intern_no_hash_fallback();
+    test_intern_two_types_index();
+    test_intern_index_survives_value_done();
     test_intern_dedup_freefun();
     test_value_done_resets();
     test_is_zero_is_one();

@@ -45,12 +45,48 @@ PASS: typed ones uniquify
 PASS: get(ZERO) is NULL
 PASS: get(typed one) is non-NULL
 
+== intern hash index scale ==
+PASS: allocate id scratch for scale test
+PASS: zero still collapses with hash index
+PASS: all 20k payloads round-trip after index grows
+PASS: all 20k non-zero values got distinct ValueIDs
+PASS: evddValueUsed counts every non-zero intern
+PASS: sparse re-intern hits index after multiple grows
+PASS: first and last re-intern hit after scale
+
+== intern hash index grow boundary ==
+PASS: values around grow thresholds still resolve
+PASS: pre-grow ids stay stable and findable after grows
+
 == intern types do not alias ==
 PASS: same payload, different type_ids, distinct ValueIDs
 PASS: each id keeps its type
 
 == intern hash collision ==
 PASS: equal hashes still intern separately when compare differs
+PASS: collision chain re-intern finds the right payload
+
+== intern long collision chain ==
+PASS: allocate scratch for collision-chain test
+PASS: 800 same-hash values distinct and re-findable via probe
+PASS: mid-chain dedup returns live id
+PASS: mid-chain dedup frees the unused payload
+
+== intern clustered hash ==
+PASS: low-bit hash clusters still resolve after grow
+
+== intern no-hash linear fallback ==
+PASS: no-hash interns distinct values
+PASS: no-hash re-intern dedups via linear scan
+
+== intern two types share index ==
+PASS: allocate scratch for two-type index test
+PASS: same payloads on two types never alias; both index-hits
+
+== intern index cleared by value_done ==
+PASS: value_done resets intern counters (index wiped too)
+PASS: intern after value_done rebuilds index
+PASS: re-intern after rebuild hits new index
 
 == intern dedup / freefun ==
 PASS: first intern does not free the live payload
@@ -269,5 +305,5 @@ PASS: dot hide0: no zero-weight low edge
 PASS: dot hide0: 1-terminal kept
 
 ----------------------------------------
-passed=207 failed=0
+passed=229 failed=0
 All tests passed.
