@@ -341,11 +341,107 @@ void evdd_value_types_done(void)
  * Intern table
  * ---------------------------------------------------------------------- */
 
+/*
+ * Open-addressing index over evddValues, keyed by (payload hash, type).
+ * Rows are append-only and wiped wholesale in evdd_value_done, so the index
+ * never deletes. Slot 0 means empty; row indices start at 1 (bare ZERO).
+ */
+static int *evdd_value_idx = NULL;       /* open-address table; 0 = empty slot */
+static unsigned evdd_value_idx_cap = 0;  /* number of slots (power of two) */
+static unsigned evdd_value_idx_cnt = 0;  /* occupied slots, grows when 2*(cnt+1) > cap */
+
+/**
+    @brief Hash function for the open-address index.
+    @param h The hash of the payload.
+    @param type The type of the payload.
+    @return The index in the open-address table.
+*/
+static unsigned evdd_value_idx_key(unsigned h, evdd_value_type type)
+{
+    unsigned k = h ^ (type * 0x9E3779B9u);
+    k ^= k >> 16;
+    k *= 0x85EBCA6Bu;
+    k ^= k >> 13;
+    return k;
+}
+
+/**
+    @brief Clear the open-address index.
+    Frees the index and resets the capacity and count.
+*/
+static void evdd_value_idx_clear(void)
+{
+    free(evdd_value_idx);
+    evdd_value_idx = NULL;
+    evdd_value_idx_cap = 0;
+    evdd_value_idx_cnt = 0;
+}
+
+/**
+    @brief Insert ValueID @p id into the open-address index (id indexes evddValues).
+    @param id The ValueID to insert.
+    @return 1 if the insertion was successful, 0 if the insertion failed.
+*/
+static int evdd_value_idx_put(int id)
+{
+    unsigned index;
+
+    // grow if needed
+    if (2u * (evdd_value_idx_cnt + 1u) > evdd_value_idx_cap) {
+        unsigned new_cap = evdd_value_idx_cap ? evdd_value_idx_cap * 2u : 1024u;
+        int *grown = (int *)calloc(new_cap, sizeof(int));
+        unsigned j;
+
+        if (grown == NULL) {
+            printf("Memory allocation fail in evdd_value_intern index\n");
+            bdd_error(BDD_MEMORY);
+            return 0;
+        }
+
+        // copy the old index to the new one
+        for (j = 0; j < evdd_value_idx_cap; j++) {
+            if (evdd_value_idx[j] == 0)
+                continue;
+            index = evdd_value_idx_key(evddValues[evdd_value_idx[j]].hash,
+                                   evddValues[evdd_value_idx[j]].type) &
+                (new_cap - 1u);
+
+            // linear probe until empty slot is found
+            while (grown[index] != 0)
+                index = (index + 1u) & (new_cap - 1u);
+            grown[index] = evdd_value_idx[j];
+        }
+        free(evdd_value_idx);
+        evdd_value_idx = grown;
+        evdd_value_idx_cap = new_cap;
+    }
+
+
+    // cap is power of two, so we can use bitwise AND to get the index
+    index = evdd_value_idx_key(evddValues[id].hash, evddValues[id].type) &
+        (evdd_value_idx_cap - 1u);
+    
+    // linear probe until empty slot is found
+    while (evdd_value_idx[index] != 0)
+        index = (index + 1u) & (evdd_value_idx_cap - 1u);
+    
+    evdd_value_idx[index] = id;
+    evdd_value_idx_cnt++;
+    return 1;
+}
+
+/**
+    @brief Intern a value into the evddValues table and the open-address index.
+    @param value The value to intern.
+    @param type The type of the value.
+    @return The ValueID of the interned value.
+*/
 evdd_value_id evdd_value_intern(void *value, evdd_value_type type)
 {
     unsigned h = 0;
     int have_hash = 0;
     int i;
+    evdd_value_compare_function_t cmp;
 
     if (value == NULL)
         return EVDD_VALUE_ZERO;
@@ -365,14 +461,32 @@ evdd_value_id evdd_value_intern(void *value, evdd_value_type type)
         have_hash = 1;
     }
 
-    if (evddValues != NULL) {
+    cmp = EVDDVALUECOMPARE(type);
+
+    if (evddValues != NULL && have_hash && evdd_value_idx_cap != 0) {
+        unsigned k =
+            evdd_value_idx_key(h, type) & (evdd_value_idx_cap - 1u);
+        
+        // linear probe until empty slot is found
+        for (; evdd_value_idx[k] != 0;
+             k = (k + 1u) & (evdd_value_idx_cap - 1u)) {
+            int j = evdd_value_idx[k];
+
+            if (evddValues[j].type != type || evddValues[j].hash != h)
+                continue;
+            
+            // if cmp is set, use it, else bitwise compare
+            if (cmp ? cmp(value, evddValues[j].payload)
+                    : value == evddValues[j].payload) {
+                // already found stored value, release the new one
+                evdd_value_release(value, type);
+                return (evdd_value_id)j;
+            }
+        }
+    } else if (evddValues != NULL && !have_hash) { // fallback to linear search
         for (i = 1; i < evddLastValueIndex; i++) {
-            evdd_value_compare_function_t cmp;
             if (evddValues[i].payload == NULL || evddValues[i].type != type)
                 continue;
-            if (have_hash && evddValues[i].hash != h)
-                continue;
-            cmp = EVDDVALUECOMPARE(type);
             if (cmp ? cmp(value, evddValues[i].payload)
                     : value == evddValues[i].payload) {
                 evdd_value_release(value, type);
@@ -386,14 +500,28 @@ evdd_value_id evdd_value_intern(void *value, evdd_value_type type)
         return EVDD_VALUE_ZERO;
     }
 
+    // store new value
     i = evddLastValueIndex++;
     evddValues[i].payload = value;
     evddValues[i].type = type;
     evddValues[i].hash = h;
     evddValueUsed++;
+
+    if (have_hash && !evdd_value_idx_put(i)) {
+        evddValues[i].payload = NULL;
+        evddLastValueIndex--;
+        evddValueUsed--;
+        evdd_value_release(value, type);
+        return EVDD_VALUE_ZERO;
+    }
     return (evdd_value_id)i;
 }
 
+/**
+    @brief Get the value from a ValueID.
+    @param id The ValueID to get the payload of.
+    @return The payload of the ValueID.
+*/
 void *evdd_value_get(evdd_value_id id)
 {
     if (evdd_value_is_untyped(id) || evddValues == NULL ||
@@ -402,12 +530,20 @@ void *evdd_value_get(evdd_value_id id)
     return evddValues[id].payload;
 }
 
+/**
+    @brief Get the type of a ValueID.
+    @param id The ValueID to get the type of.
+    @return The type of the ValueID.
+*/
 evdd_value_type evdd_value_get_type(evdd_value_id id)
 {
     evdd_value_type t = evdd_value_type_of(id);
     return t == EVDD_VALUE_UNTYPED ? 0 : t;
 }
 
+/**
+    @brief Free all values and clear the evddValues table and the open-address index.
+*/
 void evdd_value_done(void)
 {
     int i;
@@ -419,6 +555,7 @@ void evdd_value_done(void)
         free(evddValues);
         evddValues = NULL;
     }
+    evdd_value_idx_clear();
     evddValueUsed = 0;
     evddmaxValueSize = 0;
     evddLastValueIndex = 0;
