@@ -1556,6 +1556,100 @@ static void test_evdd_dot(void) {
     teardown_values();
 }
 
+/* Cell width 0.1. 0.10 bins to cell 1, 0.16 bins to cell 2 (llround(1.6)). */
+static const double k_cell_width = 0.1;
+
+static void cell_real(void *p, long long *cell)
+{
+    cell[0] = llround(dbl_val(p) / k_cell_width);
+}
+
+static int cmp_tol(void *a, void *b)
+{
+    return std::fabs(dbl_val(a) - dbl_val(b)) <= k_cell_width;
+}
+
+typedef struct {
+    double re;
+    double im;
+} cdouble;
+
+static cdouble *box_cd(double re, double im)
+{
+    cdouble *p = (cdouble *)malloc(sizeof(cdouble));
+    p->re = re;
+    p->im = im;
+    return p;
+}
+
+static void cell_reim(void *p, long long *cell)
+{
+    cdouble *z = (cdouble *)p;
+    cell[0] = llround(z->re / k_cell_width);
+    cell[1] = llround(z->im / k_cell_width);
+}
+
+static int cmp_reim(void *a, void *b)
+{
+    cdouble *x = (cdouble *)a;
+    cdouble *y = (cdouble *)b;
+    double dre = x->re - y->re;
+    double dim = x->im - y->im;
+    return std::hypot(dre, dim) <= k_cell_width;
+}
+
+static void test_intern_cell_walk(void)
+{
+    evdd_value_id a, b, far;
+    int frees;
+
+    printf("\n== intern cell walk ==\n");
+
+    /* Hash + tolerance compare never looks in the next bucket. */
+    evdd_value_type exact = evdd_new_value_type();
+    evdd_register_hash_function(exact, dbl_hash);
+    evdd_register_compare_function(exact, cmp_tol);
+    evdd_register_free_function(exact, int_free_internals);
+    a = intern_dbl(exact, 0.10);
+    b = intern_dbl(exact, 0.16);
+    EXPECT(a != b, "cell walk: hash index misses the neighbor bucket");
+
+    reset_errors();
+    evdd_register_cell_function(exact, cell_real, 0);
+    EXPECT(g_error_count >= 1, "cell walk: naxes 0 is rejected");
+    reset_errors();
+    evdd_register_cell_function(exact, cell_real, EVDD_VALUE_MAX_AXES + 1);
+    EXPECT(g_error_count >= 1, "cell walk: naxes above max is rejected");
+
+    evdd_value_type real = evdd_new_value_type();
+    evdd_register_compare_function(real, cmp_tol);
+    evdd_register_free_function(real, int_free_internals);
+    evdd_register_cell_function(real, cell_real, 1);
+    frees = g_freefun_calls;
+    a = intern_dbl(real, 0.10);
+    b = intern_dbl(real, 0.16);
+    EXPECT(a == b && nearly(get_dbl(a), 0.10),
+           "cell walk: 1 axis merges the next cell and keeps the first payload");
+    EXPECT(g_freefun_calls == frees + 1, "cell walk: neighbor hit frees the new payload");
+    far = intern_dbl(real, 0.40);
+    EXPECT(far != a, "cell walk: 1 axis leaves a value two cells away distinct");
+    a = intern_dbl(real, -0.10);
+    b = intern_dbl(real, -0.16);
+    EXPECT(a == b, "cell walk: 1 axis merges a negative neighbor");
+
+    evdd_value_type plane = evdd_new_value_type();
+    evdd_register_compare_function(plane, cmp_reim);
+    evdd_register_free_function(plane, int_free_internals);
+    evdd_register_cell_function(plane, cell_reim, 2);
+    a = evdd_value_intern(box_cd(0.10, 0.10), plane);
+    b = evdd_value_intern(box_cd(0.16, 0.16), plane);
+    EXPECT(a == b, "cell walk: 2 axes merge the corner bucket");
+    far = evdd_value_intern(box_cd(0.40, 0.10), plane);
+    EXPECT(far != a, "cell walk: 2 axes leave a far re cell distinct");
+
+    teardown_values();
+}
+
 /* ------------------------------------------------------------------------=
  * main
  * ---------------------------------------------------------------------= */
@@ -1568,6 +1662,7 @@ int main(void) {
     test_register_callbacks();
     test_types_done_reinit();
     test_intern_uniquing();
+    test_intern_cell_walk();
     test_intern_hash_index_scale();
     test_intern_hash_index_grow_boundary();
     test_intern_types_dont_alias();

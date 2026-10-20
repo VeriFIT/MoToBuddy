@@ -45,6 +45,19 @@ PASS: typed ones uniquify
 PASS: get(ZERO) is NULL
 PASS: get(typed one) is non-NULL
 
+== intern cell walk ==
+PASS: cell walk: hash index misses the neighbor bucket
+Error: cell axes 0 out of range in evdd_register_cell_function.
+PASS: cell walk: naxes 0 is rejected
+Error: cell axes 5 out of range in evdd_register_cell_function.
+PASS: cell walk: naxes above max is rejected
+PASS: cell walk: 1 axis merges the next cell and keeps the first payload
+PASS: cell walk: neighbor hit frees the new payload
+PASS: cell walk: 1 axis leaves a value two cells away distinct
+PASS: cell walk: 1 axis merges a negative neighbor
+PASS: cell walk: 2 axes merge the corner bucket
+PASS: cell walk: 2 axes leave a far re cell distinct
+
 == intern hash index scale ==
 PASS: allocate id scratch for scale test
 PASS: zero still collapses with hash index
@@ -314,5 +327,5 @@ PASS: dot hide0: no zero-weight low edge
 PASS: dot hide0: 1-terminal kept
 
 ----------------------------------------
-passed=236 failed=0
+passed=245 failed=0
 All tests passed.
