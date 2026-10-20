@@ -38,6 +38,14 @@ typedef unsigned evdd_value_type;
  * ---------------------------------------------------------------------- */
 
 typedef unsigned (*evdd_value_hash_function_t)(void *);
+/**
+ * Writes one signed cell id per axis into @p cell (length is the naxes
+ * passed to evdd_register_cell_function). Intern probes each axis at
+ * -1, 0, and +1.
+ */
+typedef void (*evdd_value_cell_function_t)(void *payload, long long *cell);
+/** Largest naxes evdd_register_cell_function accepts. Probe count is 3^naxes. */
+#define EVDD_VALUE_MAX_AXES 4
 /** Nonzero if equal (same convention as mtbdd_terminal_compare_function_t). */
 typedef int (*evdd_value_compare_function_t)(void *, void *);
 typedef void (*evdd_value_free_function_t)(void *);
@@ -73,6 +81,8 @@ typedef enum e_evddNormalizeStrategy {
 
 typedef struct s_evdd_value_functions {
     evdd_value_hash_function_t hashfun;
+    evdd_value_cell_function_t cellfun;
+    int naxes;
     evdd_value_compare_function_t comparefun;
     evdd_value_free_function_t freefun;
     evdd_value_to_str_function_t toStrFun;
@@ -92,6 +102,7 @@ typedef struct s_evdd_value_functions {
 } evdd_value_functions;
 
 #define EVDDVALUEHASH(type)      evdd_value_functions_list[type].hashfun
+#define EVDDVALUECELL(type)      evdd_value_functions_list[type].cellfun
 #define EVDDVALUECOMPARE(type)   evdd_value_functions_list[type].comparefun
 #define EVDDVALUEFREE(type)      evdd_value_functions_list[type].freefun
 #define EVDDVALUETOSTR(type)     evdd_value_functions_list[type].toStrFun
@@ -116,6 +127,8 @@ extern int evdd_value_type_size;
 
 unsigned evdd_new_value_type(void);
 void evdd_register_hash_function(evdd_value_type type, evdd_value_hash_function_t hashfun);
+void evdd_register_cell_function(evdd_value_type type, evdd_value_cell_function_t cellfun,
+                                 int naxes);
 void evdd_register_compare_function(evdd_value_type type, evdd_value_compare_function_t comparefun);
 void evdd_register_free_function(evdd_value_type type, evdd_value_free_function_t freefun);
 void evdd_register_to_str_function(evdd_value_type type, evdd_value_to_str_function_t toStrfun);

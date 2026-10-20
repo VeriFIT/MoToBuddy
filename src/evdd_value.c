@@ -5,6 +5,7 @@
  * Counterpart of terminal.c and mtbdd_insertvalue / mtbdd_findterminal.
  */
 
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -166,6 +167,35 @@ void evdd_register_hash_function(evdd_value_type type,
     if (!evdd_value_check_type(type, "evdd_register_hash_function"))
         return;
     evdd_value_functions_list[type].hashfun = hashfun;
+}
+
+/**
+    @brief Register the cell callback used instead of the payload hash.
+    @param type Value type the callback belongs to.
+    @param cellfun Writes one signed cell id per axis. NULL clears the callback.
+    @param naxes Axis count, 1 through EVDD_VALUE_MAX_AXES. Ignored when @p cellfun is NULL.
+    Intern probes every combination of -1, 0, +1 across those axes.
+*/
+void evdd_register_cell_function(evdd_value_type type,
+                                 evdd_value_cell_function_t cellfun, int naxes)
+{
+    if (!evdd_value_check_type(type, "evdd_register_cell_function"))
+        return;
+    /* NULL clears the callback so intern goes back to the hash index. */
+    if (cellfun == NULL) {
+        evdd_value_functions_list[type].cellfun = NULL;
+        evdd_value_functions_list[type].naxes = 0;
+        return;
+    }
+    /* 3^naxes probes: 1 axis is 3, 2 axes is 9, cap is 4 axes (81). */
+    if (naxes < 1 || naxes > EVDD_VALUE_MAX_AXES) {
+        printf("Error: cell axes %d out of range in evdd_register_cell_function.\n",
+               naxes);
+        bdd_error(BDD_OP);
+        return;
+    }
+    evdd_value_functions_list[type].cellfun = cellfun;
+    evdd_value_functions_list[type].naxes = naxes;
 }
 
 void evdd_register_compare_function(evdd_value_type type,
@@ -340,9 +370,12 @@ void evdd_value_types_done(void)
  * ---------------------------------------------------------------------- */
 
 /*
- * Open-addressing index over evddValues, keyed by (payload hash, type).
- * Rows are append-only and wiped wholesale in evdd_value_done, so the index
- * never deletes. Slot 0 means empty; row indices start at 1 (bare ZERO).
+ * Open-addressing index over evddValues.
+ * Exact types key by (payload hash, type). A registered cell function keys
+ * by a hash of its cell ids plus type, and lookup walks every neighbor
+ * (each axis at -1, 0, +1). Rows are append-only and wiped wholesale in
+ * evdd_value_done, so the index never deletes. Slot 0 means empty; row
+ * indices start at 1 (bare ZERO).
  */
 static int *evdd_value_idx = NULL;       /* open-address table; 0 = empty slot */
 static unsigned evdd_value_idx_cap = 0;  /* number of slots (power of two) */
@@ -361,6 +394,57 @@ static unsigned evdd_value_idx_key(unsigned h, evdd_value_type type)
     k *= 0x85EBCA6Bu;
     k ^= k >> 13;
     return k;
+}
+
+/**
+    @brief Fold cell ids into the unsigned key the open-address index stores.
+    @param cell Cell ids the callback wrote, one per axis. May be negative.
+    @param naxes Number of ids in @p cell.
+    @param type Value type, mixed in so two types do not share a key.
+    @return Key stored on the row and passed to evdd_value_idx_lookup.
+    Each id is mixed as its low 32 bits and its high 32 bits. The tail mix
+    matches evdd_value_idx_key. Two different cells can still land on the
+    same key; lookup then relies on compare.
+*/
+static unsigned evdd_value_cell_hash(const long long *cell, int naxes,
+                                     evdd_value_type type)
+{
+    /* Type first, so the same cells on two types do not share a key. */
+    unsigned k = (unsigned)type * 0x9E3779B9u;
+    int a;
+
+    for (a = 0; a < naxes; a++) {
+        /* Keep the sign bits: a negative cell must not hash like its absolute value. */
+        unsigned long long u = (unsigned long long)cell[a];
+        unsigned lo = (unsigned)u;
+        unsigned hi = (unsigned)(u >> 32);
+        k ^= lo + 0x9E3779B9u + (k << 6) + (k >> 2);
+        k ^= hi + 0x9E3779B9u + (k << 6) + (k >> 2);
+    }
+    /* Same tail mix as evdd_value_idx_key. */
+    k ^= k >> 16;
+    k *= 0x85EBCA6Bu;
+    k ^= k >> 13;
+    return k;
+}
+
+/**
+    @brief Neighbor cell @p base + @p delta, clamped to the long long range.
+    @param base Cell id the callback returned for one axis.
+    @param delta -1, 0, or +1.
+    @return The shifted id, or LLONG_MIN / LLONG_MAX when the add would overflow.
+*/
+static long long evdd_value_cell_shift(long long base, int delta)
+{
+    /* base + 1 at LLONG_MAX (and base - 1 at LLONG_MIN) is undefined. Clamp. */
+    if (delta > 0) {
+        if (base > LLONG_MAX - delta)
+            return LLONG_MAX;
+    } else if (delta < 0) {
+        if (base < LLONG_MIN - delta)
+            return LLONG_MIN;
+    }
+    return base + delta;
 }
 
 /**
@@ -429,6 +513,86 @@ static int evdd_value_idx_put(int id)
 }
 
 /**
+    @brief Probe one open-address bucket for a value of @p type whose stored key is @p h.
+    @param h Key from the payload hash or from evdd_value_cell_hash.
+    @param type Value type that must match the row.
+    @param value Payload to compare against rows in this bucket.
+    @param cmp Equality test. NULL falls back to pointer identity.
+    @return Matching ValueID, or 0 when the bucket has no compare hit.
+    Starts at the home slot and walks forward until an empty slot. Rows of
+    another type or another key are skipped.
+*/
+static int evdd_value_idx_lookup(unsigned h, evdd_value_type type, void *value,
+                                 evdd_value_compare_function_t cmp)
+{
+    unsigned k;
+
+    if (evddValues == NULL || evdd_value_idx_cap == 0)
+        return 0;
+
+    /* Home slot. cap is a power of two, so the mask wraps around the table. */
+    k = evdd_value_idx_key(h, type) & (evdd_value_idx_cap - 1u);
+    /* Walk this bucket until an empty slot. 0 means empty. */
+    for (; evdd_value_idx[k] != 0; k = (k + 1u) & (evdd_value_idx_cap - 1u)) {
+        int j = evdd_value_idx[k];
+
+        /* Another type, or a different key that only collided into this slot. */
+        if (evddValues[j].type != type || evddValues[j].hash != h)
+            continue;
+        if (cmp ? cmp(value, evddValues[j].payload) : value == evddValues[j].payload)
+            return j;
+    }
+    return 0;
+}
+
+/**
+    @brief Compare @p value with every neighbor of @p base.
+    @param value Payload being interned.
+    @param type Value type passed through to the index probe.
+    @param base Cell ids the callback wrote for @p value. Not modified.
+    @param naxes Axis count. 1 probes 3 cells, 2 probes 9.
+    @param cmp Equality test. NULL falls back to pointer identity.
+    @return Matching ValueID, or 0 when none of the neighbors compare equal.
+    Each axis is tried at -1, 0, and +1. The offsets are an odometer: the
+    first axis runs through its three steps, then the next axis advances.
+*/
+static int evdd_value_cell_lookup(void *value, evdd_value_type type,
+                                  const long long *base, int naxes,
+                                  evdd_value_compare_function_t cmp)
+{
+    long long shifted[EVDD_VALUE_MAX_AXES];
+    int ofs[EVDD_VALUE_MAX_AXES];
+    int a;
+
+    /* Start at the low corner: every axis offset is -1. Center is all zeros. */
+    for (a = 0; a < naxes; a++)
+        ofs[a] = -1;
+
+    for (;;) {
+        unsigned h;
+        int found;
+
+        for (a = 0; a < naxes; a++)
+            shifted[a] = evdd_value_cell_shift(base[a], ofs[a]);
+        h = evdd_value_cell_hash(shifted, naxes, type);
+        found = evdd_value_idx_lookup(h, type, value, cmp);
+        if (found != 0)
+            return found;
+
+        /* Odometer: bump axis 0 through -1,0,+1, then carry to the next axis. */
+        for (a = 0; a < naxes; a++) {
+            ofs[a]++;
+            if (ofs[a] <= 1)
+                break;
+            ofs[a] = -1;
+        }
+        if (a == naxes)
+            break;
+    }
+    return 0;
+}
+
+/**
     @brief Intern a value into the evddValues table and the open-address index.
     @param value The value to intern.
     @param type The type of the value.
@@ -454,34 +618,34 @@ evdd_value_id evdd_value_intern(void *value, evdd_value_type type)
         return EVDD_VALUE_ZERO;
     }
 
-    if (EVDDVALUEHASH(type)) {
-        h = EVDDVALUEHASH(type)(value);
-        have_hash = 1;
-    }
-
     cmp = EVDDVALUECOMPARE(type);
 
-    if (evddValues != NULL && have_hash && evdd_value_idx_cap != 0) {
-        unsigned k =
-            evdd_value_idx_key(h, type) & (evdd_value_idx_cap - 1u);
-        
-        // linear probe until empty slot is found
-        for (; evdd_value_idx[k] != 0;
-             k = (k + 1u) & (evdd_value_idx_cap - 1u)) {
-            int j = evdd_value_idx[k];
+    if (EVDDVALUECELL(type) != NULL) {
+        long long cell[EVDD_VALUE_MAX_AXES];
+        int naxes = evdd_value_functions_list[type].naxes;
+        int found;
 
-            if (evddValues[j].type != type || evddValues[j].hash != h)
-                continue;
-            
-            // if cmp is set, use it, else bitwise compare
-            if (cmp ? cmp(value, evddValues[j].payload)
-                    : value == evddValues[j].payload) {
-                // already found stored value, release the new one
+        EVDDVALUECELL(type)(value, cell);
+        /* Neighbors include the center cell. Compare decides a real hit. */
+        found = evdd_value_cell_lookup(value, type, cell, naxes, cmp);
+        if (found != 0) {
+            evdd_value_release(value, type);
+            return (evdd_value_id)found;
+        }
+        /* Store under the center cell only, not under the neighbors. */
+        h = evdd_value_cell_hash(cell, naxes, type);
+        have_hash = 1;
+    } else if (EVDDVALUEHASH(type)) {
+        h = EVDDVALUEHASH(type)(value);
+        have_hash = 1;
+        if (evddValues != NULL && evdd_value_idx_cap != 0) {
+            int found = evdd_value_idx_lookup(h, type, value, cmp);
+            if (found != 0) {
                 evdd_value_release(value, type);
-                return (evdd_value_id)j;
+                return (evdd_value_id)found;
             }
         }
-    } else if (evddValues != NULL && !have_hash) { // fallback to linear search
+    } else if (evddValues != NULL) { /* no hash and no cell: linear search */
         for (i = 1; i < evddLastValueIndex; i++) {
             if (evddValues[i].payload == NULL || evddValues[i].type != type)
                 continue;
