@@ -250,6 +250,15 @@ PASS: diamond: left and right stay distinct nodes
 PASS: diamond: shared mid remains one node after normalize
 PASS: diamond: shared child is the eager-normalized mid
 
+== evdd_normalize under GC ==
+PASS: normalize GC: evdd_init
+PASS: normalize GC: free list cannot hold a second copy
+PASS: normalize GC: input refcou restored
+PASS: normalize GC: result is a new unreferenced node
+PASS: normalize GC: child level is below its parent
+PASS: normalize GC: normalized tree keeps every node
+PASS: normalize GC: raw and normalized agree on every assignment
+
 == refs / gbc ==
 PASS: refs_gbc: evdd_init
 PASS: new nodes start with refcou 0
@@ -305,5 +314,5 @@ PASS: dot hide0: no zero-weight low edge
 PASS: dot hide0: 1-terminal kept
 
 ----------------------------------------
-passed=229 failed=0
+passed=236 failed=0
 All tests passed.
