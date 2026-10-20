@@ -1124,6 +1124,123 @@ static void test_evdd_normalize(void) {
     teardown_values();
 }
 
+/* Full binary tree of raw nodes. Bottom edges carry distinct positive weights
+ * so normalize cannot collapse the tree. Ancestors are referenced across the
+ * sibling build, same as a caller that keeps the path alive. */
+static EVDD normgc_build(unsigned lvl, int nvars, evdd_value_type t, int *seq)
+{
+    if ((int)lvl + 1 == nvars) {
+        EVDD lo = evdd_const(intern_dbl(t, (double)(*seq)++));
+        EVDD hi = evdd_const(intern_dbl(t, (double)(*seq)++));
+        return evdd_makenode_raw(lvl, lo, hi);
+    }
+
+    EVDD lo = evdd_addref(normgc_build(lvl + 1, nvars, t, seq));
+    EVDD hi = evdd_addref(normgc_build(lvl + 1, nvars, t, seq));
+    lo.w = one_dbl(t);
+    hi.w = one_dbl(t);
+    EVDD r = evdd_makenode_raw(lvl, lo, hi);
+    evdd_delref(lo);
+    evdd_delref(hi);
+    return r;
+}
+
+static double normgc_eval(EVDD e, unsigned x, int nvars)
+{
+    double w = get_dbl(e.w);
+    int nd = e.node;
+    int guard = 0;
+
+    while (nd != EVDD_TRUE_NODE) {
+        int bit;
+        if (++guard > nvars || nd < 0 || nd >= evddnodesize || EVDDISFREE(nd))
+            return -1.0;
+        bit = (int)((x >> (nvars - 1 - (int)EVDDLEVEL(nd))) & 1u);
+        w *= get_dbl(bit ? EVDDWHIGH(nd) : EVDDWLOW(nd));
+        nd = bit ? EVDDHIGH(nd) : EVDDLOW(nd);
+    }
+    return w;
+}
+
+static int normgc_count(int node, unsigned char *seen)
+{
+    if (node == EVDD_TRUE_NODE || node < 0 || node >= evddnodesize || seen[node])
+        return 0;
+    seen[node] = 1;
+    if (EVDDISFREE(node))
+        return 0;
+    return 1 + normgc_count(EVDDLOW(node), seen) +
+           normgc_count(EVDDHIGH(node), seen);
+}
+
+static int normgc_levels_ok(void)
+{
+    int i;
+    for (i = 1; i < evddnodesize; i++) {
+        int c;
+        if (EVDDISFREE(i))
+            continue;
+        c = EVDDLOW(i);
+        if (c != EVDD_TRUE_NODE &&
+            (c < 0 || c >= evddnodesize || EVDDISFREE(c) ||
+             (unsigned)EVDDLEVEL(c) <= EVDDLEVEL(i)))
+            return 0;
+        c = EVDDHIGH(i);
+        if (c != EVDD_TRUE_NODE &&
+            (c < 0 || c >= evddnodesize || EVDDISFREE(c) ||
+             (unsigned)EVDDLEVEL(c) <= EVDDLEVEL(i)))
+            return 0;
+    }
+    return 1;
+}
+
+static void test_evdd_normalize_under_gc(void)
+{
+    printf("\n== evdd_normalize under GC ==\n");
+
+    /* 6 variables: 63 raw nodes. init(80) lands on prime 83, so 19 free slots
+     * remain and normalize must collect or resize before it finishes. */
+    const int nvars = 6;
+    const int nodes = (1 << nvars) - 1;
+    int seq = 1;
+    int x;
+    int match = 1;
+    unsigned char *seen;
+
+    EXPECT(evdd_init(80) == 0, "normalize GC: evdd_init");
+
+    evdd_value_type t = register_dbl_type();
+    evdd_set_normalization(t, EVDD_NORMALIZE_FIRST_NONZERO);
+
+    EVDD raw = evdd_addref(normgc_build(0, nvars, t, &seq));
+    EXPECT(evddfreenum < nodes,
+           "normalize GC: free list cannot hold a second copy");
+
+    EVDD norm = evdd_normalize(raw);
+    EXPECT(evddnodes[raw.node].refcou == 1,
+           "normalize GC: input refcou restored");
+    EXPECT(norm.node != raw.node && norm.node != EVDD_TRUE_NODE &&
+               evddnodes[norm.node].refcou == 0,
+           "normalize GC: result is a new unreferenced node");
+    EXPECT(normgc_levels_ok(), "normalize GC: child level is below its parent");
+
+    seen = (unsigned char *)calloc((size_t)evddnodesize, 1);
+    EXPECT(seen != NULL && normgc_count(norm.node, seen) == nodes,
+           "normalize GC: normalized tree keeps every node");
+    free(seen);
+
+    for (x = 0; x < (1 << nvars); x++) {
+        if (!nearly(normgc_eval(raw, (unsigned)x, nvars),
+                    normgc_eval(norm, (unsigned)x, nvars)))
+            match = 0;
+    }
+    EXPECT(match, "normalize GC: raw and normalized agree on every assignment");
+
+    evdd_delref(raw);
+    evdd_done();
+    teardown_values();
+}
+
 static void test_evdd_refs_gbc(void) {
     printf("\n== refs / gbc ==\n");
 
@@ -1476,6 +1593,7 @@ int main(void) {
     test_node_table_init();
     test_makenode_raw();
     test_evdd_normalize();
+    test_evdd_normalize_under_gc();
     test_evdd_refs_gbc();
     test_evdd_apply();
     test_evdd_gates();

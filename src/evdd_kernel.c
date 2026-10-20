@@ -313,6 +313,8 @@ static EVDD evdd_normalize_node(int node, EvddNormMemo *memo)
         low_e = evdd_normalize_node(low_n, memo);
         low_e.w = evdd_value_mul(EVDDWLOW(node), low_e.w);
     }
+    /* Low must stay marked while the high cofactor (and its makenodes) runs. */
+    evdd_addref(low_e);
 
     if (EVDDISCONST(high_n)) {
         high_e.node = high_n;
@@ -321,8 +323,15 @@ static EVDD evdd_normalize_node(int node, EvddNormMemo *memo)
         high_e = evdd_normalize_node(high_n, memo);
         high_e.w = evdd_value_mul(EVDDWHIGH(node), high_e.w);
     }
+    evdd_addref(high_e);
 
     out = evdd_makenode(EVDDLEVEL(node), low_e, high_e);
+    evdd_delref(low_e);
+    evdd_delref(high_e);
+
+    /* Memo keeps the result alive until evdd_normalize finishes the walk.
+     * makenode leaves refcou at 0, and evdd_gbc does not clear this memo. */
+    evdd_addref(out);
     memo[node].e = out;
     memo[node].set = 1;
     return out;
@@ -356,8 +365,15 @@ EVDD evdd_normalize(EVDD root)
         return evdd_false();
     }
 
+    /* Pin the input diagram so a collection cannot reuse nodes still being read. */
+    evdd_addref(root);
     out = evdd_normalize_node(root.node, memo);
     out.w = evdd_value_mul(root.w, out.w);
+    for (int i = 0; i < n; i++) {
+        if (memo[i].set)
+            evdd_delref(memo[i].e);
+    }
+    evdd_delref(root);
     free(memo);
     return out;
 }
