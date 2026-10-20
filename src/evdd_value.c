@@ -3,8 +3,6 @@
  * @brief Intern table for EVDD edge values (hash by payload, not via DD nodes).
  *
  * Counterpart of terminal.c and mtbdd_insertvalue / mtbdd_findterminal.
- * Uniquing must not create EvddNodes. GC recycles intern slots when no
- * live edge still holds the ValueID.
  */
 
 #include <stdio.h>
