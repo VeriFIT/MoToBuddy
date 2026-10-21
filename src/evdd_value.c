@@ -175,12 +175,22 @@ void evdd_register_hash_function(evdd_value_type type,
     @param cellfun Writes one signed cell id per axis. NULL clears the callback.
     @param naxes Axis count, 1 through EVDD_VALUE_MAX_AXES. Ignored when @p cellfun is NULL.
     Intern probes every combination of -1, 0, +1 across those axes.
+
+    Rejected once this type has an interned value (the per-type interned
+    flag). Switching the index would miss the rows already stored and
+    intern a second id. The previous registration is left in place.
 */
 void evdd_register_cell_function(evdd_value_type type,
                                  evdd_value_cell_function_t cellfun, int naxes)
 {
     if (!evdd_value_check_type(type, "evdd_register_cell_function"))
         return;
+    if (evdd_value_functions_list[type].interned) {
+        printf("Error: cell registration frozen for type %u (values already interned)\n",
+               type);
+        bdd_error(BDD_OP);
+        return;
+    }
     /* NULL clears the callback so intern goes back to the hash index. */
     if (cellfun == NULL) {
         evdd_value_functions_list[type].cellfun = NULL;
@@ -676,6 +686,8 @@ evdd_value_id evdd_value_intern(void *value, evdd_value_type type)
         evdd_value_release(value, type);
         return EVDD_VALUE_ZERO;
     }
+    /* First stored row freezes later cell registration for this type. */
+    evdd_value_functions_list[type].interned = 1;
     return (evdd_value_id)i;
 }
 
@@ -721,6 +733,11 @@ void evdd_value_done(void)
     evddValueUsed = 0;
     evddmaxValueSize = 0;
     evddLastValueIndex = 0;
+    /* No rows left, so a cell callback may be registered again. */
+    if (evdd_value_functions_list != NULL) {
+        for (i = 0; i < evdd_value_type_number; i++)
+            evdd_value_functions_list[i].interned = 0;
+    }
 }
 
 /* -------------------------------------------------------------------------
