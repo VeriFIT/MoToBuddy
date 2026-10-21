@@ -1600,42 +1600,68 @@ static int cmp_reim(void *a, void *b)
 
 static void test_intern_cell_walk(void)
 {
-    evdd_value_id a, b, far;
+    evdd_value_id a, b, far, hash_id, cell_id;
     int frees;
 
     printf("\n== intern cell walk ==\n");
+
+    /* Bad axis counts on a type with no interned rows. */
+    evdd_value_type empty = evdd_new_value_type();
+    reset_errors();
+    evdd_register_cell_function(empty, cell_real, 0);
+    EXPECT(g_error_count >= 1, "cell walk: naxes 0 is rejected");
+    reset_errors();
+    evdd_register_cell_function(empty, cell_real, EVDD_VALUE_MAX_AXES + 1);
+    EXPECT(g_error_count >= 1, "cell walk: naxes above max is rejected");
 
     /* Hash + tolerance compare never looks in the next bucket. */
     evdd_value_type exact = evdd_new_value_type();
     evdd_register_hash_function(exact, dbl_hash);
     evdd_register_compare_function(exact, cmp_tol);
     evdd_register_free_function(exact, int_free_internals);
-    a = intern_dbl(exact, 0.10);
+    hash_id = intern_dbl(exact, 0.10);
     b = intern_dbl(exact, 0.16);
-    EXPECT(a != b, "cell walk: hash index misses the neighbor bucket");
+    EXPECT(hash_id != b, "cell walk: hash index misses the neighbor bucket");
 
     reset_errors();
-    evdd_register_cell_function(exact, cell_real, 0);
-    EXPECT(g_error_count >= 1, "cell walk: naxes 0 is rejected");
+    evdd_register_cell_function(exact, cell_real, 1);
+    EXPECT(g_error_count >= 1 &&
+               evdd_value_functions_list[exact].cellfun == NULL,
+           "cell walk: register after intern is rejected");
+    EXPECT(intern_dbl(exact, 0.10) == hash_id,
+           "cell walk: rejected register keeps the hash id");
+
     reset_errors();
-    evdd_register_cell_function(exact, cell_real, EVDD_VALUE_MAX_AXES + 1);
-    EXPECT(g_error_count >= 1, "cell walk: naxes above max is rejected");
+    evdd_register_cell_function(exact, NULL, 0);
+    EXPECT(g_error_count >= 1 &&
+               evdd_value_functions_list[exact].cellfun == NULL,
+           "cell walk: clear after intern is rejected");
+    EXPECT(intern_dbl(exact, 0.10) == hash_id,
+           "cell walk: rejected clear keeps the hash id");
 
     evdd_value_type real = evdd_new_value_type();
     evdd_register_compare_function(real, cmp_tol);
     evdd_register_free_function(real, int_free_internals);
     evdd_register_cell_function(real, cell_real, 1);
     frees = g_freefun_calls;
-    a = intern_dbl(real, 0.10);
+    cell_id = intern_dbl(real, 0.10);
     b = intern_dbl(real, 0.16);
-    EXPECT(a == b && nearly(get_dbl(a), 0.10),
+    EXPECT(cell_id == b && nearly(get_dbl(cell_id), 0.10),
            "cell walk: 1 axis merges the next cell and keeps the first payload");
     EXPECT(g_freefun_calls == frees + 1, "cell walk: neighbor hit frees the new payload");
     far = intern_dbl(real, 0.40);
-    EXPECT(far != a, "cell walk: 1 axis leaves a value two cells away distinct");
+    EXPECT(far != cell_id, "cell walk: 1 axis leaves a value two cells away distinct");
     a = intern_dbl(real, -0.10);
     b = intern_dbl(real, -0.16);
     EXPECT(a == b, "cell walk: 1 axis merges a negative neighbor");
+
+    reset_errors();
+    evdd_register_cell_function(real, NULL, 0);
+    EXPECT(g_error_count >= 1 &&
+               evdd_value_functions_list[real].cellfun == cell_real,
+           "cell walk: clear after a cell intern is rejected");
+    EXPECT(intern_dbl(real, 0.16) == cell_id,
+           "cell walk: rejected clear still merges the neighbor");
 
     evdd_value_type plane = evdd_new_value_type();
     evdd_register_compare_function(plane, cmp_reim);
@@ -1646,6 +1672,15 @@ static void test_intern_cell_walk(void)
     EXPECT(a == b, "cell walk: 2 axes merge the corner bucket");
     far = evdd_value_intern(box_cd(0.40, 0.10), plane);
     EXPECT(far != a, "cell walk: 2 axes leave a far re cell distinct");
+
+    /* The interned flag clears with the table, so registration works again. */
+    evdd_value_done();
+    evdd_register_cell_function(exact, cell_real, 1);
+    EXPECT(evdd_value_functions_list[exact].cellfun == cell_real,
+           "cell walk: value_done allows a cell callback again");
+    a = intern_dbl(exact, 0.10);
+    b = intern_dbl(exact, 0.16);
+    EXPECT(a == b, "cell walk: after value_done the new callback merges neighbors");
 
     teardown_values();
 }

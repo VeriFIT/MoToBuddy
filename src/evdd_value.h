@@ -99,6 +99,7 @@ typedef struct s_evdd_value_functions {
     evddNormalizeStrategy strategy;
     int strategy_frozen;
     int normalization_paused;
+    int interned; /**< Nonzero once a payload of this type is in the intern table. */
 } evdd_value_functions;
 
 #define EVDDVALUEHASH(type)      evdd_value_functions_list[type].hashfun
@@ -127,6 +128,7 @@ extern int evdd_value_type_size;
 
 unsigned evdd_new_value_type(void);
 void evdd_register_hash_function(evdd_value_type type, evdd_value_hash_function_t hashfun);
+/** Cell index. Rejected once this type has an interned value. NULL clears it. */
 void evdd_register_cell_function(evdd_value_type type, evdd_value_cell_function_t cellfun,
                                  int naxes);
 void evdd_register_compare_function(evdd_value_type type, evdd_value_compare_function_t comparefun);
