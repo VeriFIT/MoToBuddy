@@ -1614,6 +1614,20 @@ static void test_intern_cell_walk(void)
     evdd_register_cell_function(empty, cell_real, EVDD_VALUE_MAX_AXES + 1);
     EXPECT(g_error_count >= 1, "cell walk: naxes above max is rejected");
 
+    /* Clear before any intern: lookup goes back to the payload hash. */
+    evdd_value_type cleared = evdd_new_value_type();
+    evdd_register_hash_function(cleared, dbl_hash);
+    evdd_register_compare_function(cleared, cmp_tol);
+    evdd_register_free_function(cleared, int_free_internals);
+    evdd_register_cell_function(cleared, cell_real, 1);
+    evdd_register_cell_function(cleared, NULL, 0);
+    EXPECT(evdd_value_functions_list[cleared].cellfun == NULL &&
+               evdd_value_functions_list[cleared].naxes == 0,
+           "cell walk: NULL clears the callback");
+    a = intern_dbl(cleared, 0.10);
+    b = intern_dbl(cleared, 0.16);
+    EXPECT(a != b, "cell walk: after clear, the hash index misses the neighbor");
+
     /* Hash + tolerance compare never looks in the next bucket. */
     evdd_value_type exact = evdd_new_value_type();
     evdd_register_hash_function(exact, dbl_hash);
@@ -1685,6 +1699,39 @@ static void test_intern_cell_walk(void)
     teardown_values();
 }
 
+/* Nearby high weights share a node because intern merges them first. */
+static void test_cell_diagram(void)
+{
+    printf("\n== cell callback on a diagram ==\n");
+
+    EXPECT(evdd_init(64) == 0, "cell diagram: evdd_init");
+
+    evdd_value_type t = register_dbl_type();
+    evdd_register_compare_function(t, cmp_tol);
+    evdd_register_cell_function(t, cell_real, 1);
+    evdd_set_normalization(t, EVDD_NORMALIZE_FIRST_NONZERO);
+
+    EVDD f = evdd_false();
+    EVDD hi = unit_const_dbl(t);
+    hi.w = intern_dbl(t, 0.10);
+    EVDD n1 = evdd_makenode(0, f, hi);
+
+    hi.w = intern_dbl(t, 0.16);
+    EVDD n2 = evdd_makenode(0, f, hi);
+    EXPECT(n1.node == n2.node && n1.node != EVDD_TRUE_NODE && n1.w == n2.w,
+           "cell diagram: nearby weights share one node");
+    EXPECT(nearly(get_dbl(n1.w), 0.10),
+           "cell diagram: incoming weight keeps the first payload");
+
+    hi.w = intern_dbl(t, 0.40);
+    EVDD n3 = evdd_makenode(0, f, hi);
+    EXPECT(n3.node == n1.node && n3.w != n1.w,
+           "cell diagram: a weight two cells away is a different edge");
+
+    evdd_done();
+    teardown_values();
+}
+
 /* ------------------------------------------------------------------------=
  * main
  * ---------------------------------------------------------------------= */
@@ -1698,6 +1745,7 @@ int main(void) {
     test_types_done_reinit();
     test_intern_uniquing();
     test_intern_cell_walk();
+    test_cell_diagram();
     test_intern_hash_index_scale();
     test_intern_hash_index_grow_boundary();
     test_intern_types_dont_alias();
