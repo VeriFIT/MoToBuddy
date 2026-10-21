@@ -41,7 +41,10 @@ typedef unsigned (*evdd_value_hash_function_t)(void *);
 /**
  * Writes one signed cell id per axis into @p cell (length is the naxes
  * passed to evdd_register_cell_function). Intern probes each axis at
- * -1, 0, and +1.
+ * -1, 0, and +1. The first compare hit is returned.
+ *
+ * A fixed cell width lines up with a relative tolerance only while
+ * |x| <= 1, which holds for normalized weights and not for raw inputs.
  */
 typedef void (*evdd_value_cell_function_t)(void *payload, long long *cell);
 /** Largest naxes evdd_register_cell_function accepts. Probe count is 3^naxes. */

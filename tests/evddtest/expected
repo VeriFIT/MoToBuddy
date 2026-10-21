@@ -50,24 +50,32 @@ Error: cell axes 0 out of range in evdd_register_cell_function.
 PASS: cell walk: naxes 0 is rejected
 Error: cell axes 5 out of range in evdd_register_cell_function.
 PASS: cell walk: naxes above max is rejected
+PASS: cell walk: NULL clears the callback
+PASS: cell walk: after clear, the hash index misses the neighbor
 PASS: cell walk: hash index misses the neighbor bucket
-Error: cell registration frozen for type 1 (values already interned)
+Error: cell registration frozen for type 2 (values already interned)
 PASS: cell walk: register after intern is rejected
 PASS: cell walk: rejected register keeps the hash id
-Error: cell registration frozen for type 1 (values already interned)
+Error: cell registration frozen for type 2 (values already interned)
 PASS: cell walk: clear after intern is rejected
 PASS: cell walk: rejected clear keeps the hash id
 PASS: cell walk: 1 axis merges the next cell and keeps the first payload
 PASS: cell walk: neighbor hit frees the new payload
 PASS: cell walk: 1 axis leaves a value two cells away distinct
 PASS: cell walk: 1 axis merges a negative neighbor
-Error: cell registration frozen for type 2 (values already interned)
+Error: cell registration frozen for type 3 (values already interned)
 PASS: cell walk: clear after a cell intern is rejected
 PASS: cell walk: rejected clear still merges the neighbor
 PASS: cell walk: 2 axes merge the corner bucket
 PASS: cell walk: 2 axes leave a far re cell distinct
 PASS: cell walk: value_done allows a cell callback again
 PASS: cell walk: after value_done the new callback merges neighbors
+
+== cell callback on a diagram ==
+PASS: cell diagram: evdd_init
+PASS: cell diagram: nearby weights share one node
+PASS: cell diagram: incoming weight keeps the first payload
+PASS: cell diagram: a weight two cells away is a different edge
 
 == intern hash index scale ==
 PASS: allocate id scratch for scale test
@@ -338,5 +346,5 @@ PASS: dot hide0: no zero-weight low edge
 PASS: dot hide0: 1-terminal kept
 
 ----------------------------------------
-passed=253 failed=0
+passed=259 failed=0
 All tests passed.
