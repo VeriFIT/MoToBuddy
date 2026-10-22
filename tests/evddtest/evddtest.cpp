@@ -361,7 +361,7 @@ static void *dbl_add_as_mul(void *a, void *b)
  * row would give one value two ids. Arithmetic callbacks stay mutable. */
 static void test_intern_index_callback_freeze(void)
 {
-    evdd_value_id a, b, c, d, e, zid, two;
+    evdd_value_id a, b, c, d, e, zid, two, three;
 
     printf("\n== intern index callback freeze ==\n");
 
@@ -412,11 +412,13 @@ static void test_intern_index_callback_freeze(void)
 
     evdd_value_type m = register_dbl_type();
     two = intern_dbl(m, 2.0);
+    three = intern_dbl(m, 3.0);
     reset_errors();
     evdd_register_mul_function(m, dbl_add_as_mul);
     EXPECT(g_error_count == 0 && EVDDVALUEMUL(m) == dbl_add_as_mul,
            "mul stays mutable after intern");
-    EXPECT(nearly(get_dbl(evdd_value_mul(two, two)), 4.0),
+    /* Add gives 5, mul would give 6. */
+    EXPECT(nearly(get_dbl(evdd_value_mul(two, three)), 5.0),
            "mul after intern uses the new callback");
 
     evdd_value_done();
@@ -839,6 +841,16 @@ static void test_normalize_first_nonzero(void) {
     EXPECT(r.w_low == EVDD_VALUE_ZERO && r.w_high == EVDD_VALUE_ZERO &&
                r.incoming == EVDD_VALUE_ZERO,
            "both zero: all ZERO");
+
+    evdd_value_normalize_function_t builtin = EVDDVALUENORMALIZE(t);
+    reset_errors();
+    evdd_register_normalize_function(t, high_unit_norm);
+    EXPECT(g_error_count >= 1 && g_last_error == BDD_OP &&
+               EVDDVALUENORMALIZE(t) == builtin,
+           "normalizefun stays put once the strategy is frozen");
+    r = evdd_value_normalize(intern_dbl(t, 3.0), intern_dbl(t, 6.0));
+    EXPECT(evdd_value_is_one(r.w_low) && nearly(get_dbl(r.w_high), 2.0),
+           "frozen strategy still divides high by low");
 
     teardown_values();
 }

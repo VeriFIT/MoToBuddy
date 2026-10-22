@@ -198,6 +198,9 @@ PASS: negative low still factors
 PASS: high / low keeps sign
 PASS: incoming keeps the low value
 PASS: both zero: all ZERO
+Error: normalization already frozen for type 0
+PASS: normalizefun stays put once the strategy is frozen
+PASS: frozen strategy still divides high by low
 
 == normalize low-edge ==
 PASS: low-edge strategy accepted
@@ -362,5 +365,5 @@ PASS: dot hide0: no zero-weight low edge
 PASS: dot hide0: 1-terminal kept
 
 ----------------------------------------
-passed=270 failed=0
+passed=272 failed=0
 All tests passed.

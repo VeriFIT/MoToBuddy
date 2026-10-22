@@ -149,6 +149,7 @@ void evdd_register_is_one_function(evdd_value_type type, evdd_value_pred_functio
 void evdd_register_abs_cmp_function(evdd_value_type type, evdd_value_abs_cmp_function_t abscmpfun);
 void evdd_register_abs_sq_function(evdd_value_type type, evdd_value_unary_function_t absqfun);
 void evdd_register_sqrt_function(evdd_value_type type, evdd_value_unary_function_t sqrtfun);
+/** Normalize callback. Rejected once this type's strategy is frozen. */
 void evdd_register_normalize_function(evdd_value_type type, evdd_value_normalize_function_t normalizefun);
 /** Built-in strategy; errors if already frozen or callbacks missing. */
 void evdd_set_normalization(evdd_value_type type, evddNormalizeStrategy strategy);
