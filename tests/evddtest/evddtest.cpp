@@ -329,6 +329,107 @@ static void test_intern_uniquing(void) {
     teardown_values();
 }
 
+/* Bit pattern vs a scaled integer. Equal payloads land in different buckets. */
+static unsigned hash_bits(void *a)
+{
+    double v = dbl_val(a);
+    unsigned long long u;
+    memcpy(&u, &v, 8);
+    return (unsigned)(u ^ (u >> 32));
+}
+
+static unsigned hash_scaled(void *a)
+{
+    return (unsigned)(dbl_val(a) * 1e6);
+}
+
+static int cmp_near(void *a, void *b)
+{
+    double d = dbl_val(a) - dbl_val(b);
+    if (d < 0)
+        d = -d;
+    return d <= 1e-3;
+}
+
+/* Stands in for a late arithmetic change: indexing must not care. */
+static void *dbl_add_as_mul(void *a, void *b)
+{
+    return box_dbl(dbl_val(a) + dbl_val(b));
+}
+
+/* Hash, compare, and is-zero pick the id. A change after the first stored
+ * row would give one value two ids. Arithmetic callbacks stay mutable. */
+static void test_intern_index_callback_freeze(void)
+{
+    evdd_value_id a, b, c, d, e, zid, two;
+
+    printf("\n== intern index callback freeze ==\n");
+
+    evdd_value_type t = evdd_new_value_type();
+    evdd_register_hash_function(t, hash_scaled);
+    evdd_register_hash_function(t, hash_bits);
+    evdd_register_compare_function(t, dbl_cmp);
+    evdd_register_free_function(t, int_free_internals);
+    EXPECT(EVDDVALUEHASH(t) == hash_bits,
+           "hash freeze: register before intern replaces the callback");
+    a = intern_dbl(t, 0.5);
+    reset_errors();
+    evdd_register_hash_function(t, hash_scaled);
+    b = intern_dbl(t, 0.5);
+    EXPECT(g_error_count >= 1 && g_last_error == BDD_OP &&
+               EVDDVALUEHASH(t) == hash_bits,
+           "hash freeze: register after intern is rejected");
+    EXPECT(a == b && a != EVDD_VALUE_ZERO,
+           "hash freeze: equal value keeps the first id");
+
+    evdd_value_type u = evdd_new_value_type();
+    evdd_register_hash_function(u, hash_scaled);
+    evdd_register_compare_function(u, dbl_cmp);
+    evdd_register_free_function(u, int_free_internals);
+    c = intern_dbl(u, 0.5);
+    d = intern_dbl(u, 0.5000001);
+    reset_errors();
+    evdd_register_compare_function(u, cmp_near);
+    e = intern_dbl(u, 0.5000001);
+    EXPECT(g_error_count >= 1 && g_last_error == BDD_OP &&
+               EVDDVALUECOMPARE(u) == dbl_cmp,
+           "compare freeze: register after intern is rejected");
+    EXPECT(c != d && e == d,
+           "compare freeze: near values stay on the ids exact compare gave them");
+
+    evdd_value_type z = evdd_new_value_type();
+    evdd_register_hash_function(z, hash_bits);
+    evdd_register_compare_function(z, dbl_cmp);
+    evdd_register_free_function(z, int_free_internals);
+    zid = intern_dbl(z, 0.0);
+    reset_errors();
+    evdd_register_is_zero_function(z, dbl_is_zero);
+    EXPECT(g_error_count >= 1 && g_last_error == BDD_OP &&
+               EVDDVALUEISZERO(z) == NULL,
+           "is_zero freeze: register after intern is rejected");
+    EXPECT(zid != EVDD_VALUE_ZERO && intern_dbl(z, 0.0) == zid,
+           "is_zero freeze: a later zero stays on the typed id");
+
+    evdd_value_type m = register_dbl_type();
+    two = intern_dbl(m, 2.0);
+    reset_errors();
+    evdd_register_mul_function(m, dbl_add_as_mul);
+    EXPECT(g_error_count == 0 && EVDDVALUEMUL(m) == dbl_add_as_mul,
+           "mul stays mutable after intern");
+    EXPECT(nearly(get_dbl(evdd_value_mul(two, two)), 4.0),
+           "mul after intern uses the new callback");
+
+    evdd_value_done();
+    evdd_register_hash_function(t, hash_scaled);
+    EXPECT(EVDDVALUEHASH(t) == hash_scaled,
+           "hash freeze: value_done allows a new hash");
+    a = intern_dbl(t, 0.5);
+    b = intern_dbl(t, 0.5);
+    EXPECT(a == b, "hash freeze: the new hash still uniquifies");
+
+    teardown_values();
+}
+
 static void test_intern_hash_index_scale(void) {
     printf("\n== intern hash index scale ==\n");
     evdd_value_type t = register_int_type();
@@ -1744,6 +1845,7 @@ int main(void) {
     test_register_callbacks();
     test_types_done_reinit();
     test_intern_uniquing();
+    test_intern_index_callback_freeze();
     test_intern_cell_walk();
     test_cell_diagram();
     test_intern_hash_index_scale();

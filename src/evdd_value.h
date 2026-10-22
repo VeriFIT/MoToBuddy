@@ -130,10 +130,12 @@ extern int evdd_value_type_number;
 extern int evdd_value_type_size;
 
 unsigned evdd_new_value_type(void);
+/** Payload hash. Rejected once this type has an interned value. */
 void evdd_register_hash_function(evdd_value_type type, evdd_value_hash_function_t hashfun);
 /** Cell index. Rejected once this type has an interned value. NULL clears it. */
 void evdd_register_cell_function(evdd_value_type type, evdd_value_cell_function_t cellfun,
                                  int naxes);
+/** Equality test. Rejected once this type has an interned value. */
 void evdd_register_compare_function(evdd_value_type type, evdd_value_compare_function_t comparefun);
 void evdd_register_free_function(evdd_value_type type, evdd_value_free_function_t freefun);
 void evdd_register_to_str_function(evdd_value_type type, evdd_value_to_str_function_t toStrfun);
@@ -141,6 +143,7 @@ void evdd_register_mul_function(evdd_value_type type, evdd_value_binary_function
 void evdd_register_div_function(evdd_value_type type, evdd_value_binary_function_t divfun);
 void evdd_register_add_function(evdd_value_type type, evdd_value_binary_function_t addfun);
 void evdd_register_sub_function(evdd_value_type type, evdd_value_binary_function_t subfun);
+/** Zero predicate. Rejected once this type has an interned value. */
 void evdd_register_is_zero_function(evdd_value_type type, evdd_value_pred_function_t iszerofun);
 void evdd_register_is_one_function(evdd_value_type type, evdd_value_pred_function_t isonefun);
 void evdd_register_abs_cmp_function(evdd_value_type type, evdd_value_abs_cmp_function_t abscmpfun);

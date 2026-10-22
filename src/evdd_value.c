@@ -46,6 +46,21 @@ static evddNormResult evdd_norm_l2(evdd_value_id w_low, evdd_value_id w_high);
  * Helpers
  * ---------------------------------------------------------------------- */
 
+/* Hash, compare, cell, and is-zero decide which id a payload gets.
+ * Once a row of this type is stored, a new callback would miss those
+ * rows or leave values the new predicate calls equal on different ids.
+ * Reports BDD_OP and leaves the previous function in place.
+ * Arithmetic callbacks are not frozen: they do not index the table. */
+static int evdd_value_index_frozen(evdd_value_type type, const char *what)
+{
+    if (!evdd_value_functions_list[type].interned)
+        return 0;
+    printf("Error: %s registration frozen for type %u (values already interned)\n",
+           what, type);
+    bdd_error(BDD_OP);
+    return 1;
+}
+
 static int evdd_value_check_type(evdd_value_type type, const char *fn)
 {
     if (type >= (unsigned)evdd_value_type_number) {
@@ -161,10 +176,21 @@ unsigned evdd_new_value_type(void)
     return (unsigned)evdd_value_type_number++;
 }
 
+/**
+    @brief Register the payload hash used to index interned values.
+    @param type Value type the callback belongs to.
+    @param hashfun Hash of a payload. NULL selects a linear scan.
+
+    Rejected once this type has an interned value. Rows already stored
+    are indexed under the old hash, so a new one would intern a second id.
+    The previous registration is left in place.
+*/
 void evdd_register_hash_function(evdd_value_type type,
                                  evdd_value_hash_function_t hashfun)
 {
     if (!evdd_value_check_type(type, "evdd_register_hash_function"))
+        return;
+    if (evdd_value_index_frozen(type, "hash"))
         return;
     evdd_value_functions_list[type].hashfun = hashfun;
 }
@@ -185,12 +211,8 @@ void evdd_register_cell_function(evdd_value_type type,
 {
     if (!evdd_value_check_type(type, "evdd_register_cell_function"))
         return;
-    if (evdd_value_functions_list[type].interned) {
-        printf("Error: cell registration frozen for type %u (values already interned)\n",
-               type);
-        bdd_error(BDD_OP);
+    if (evdd_value_index_frozen(type, "cell"))
         return;
-    }
     /* NULL clears the callback so intern goes back to the hash index. */
     if (cellfun == NULL) {
         evdd_value_functions_list[type].cellfun = NULL;
@@ -208,10 +230,22 @@ void evdd_register_cell_function(evdd_value_type type,
     evdd_value_functions_list[type].naxes = naxes;
 }
 
+/**
+    @brief Register the equality test used when an intern lookup hits a row.
+    @param type Value type the callback belongs to.
+    @param comparefun Nonzero when two payloads are the same value. NULL
+    falls back to pointer identity.
+
+    Rejected once this type has an interned value. A later compare cannot
+    merge ids the old one kept apart. The previous registration is left
+    in place.
+*/
 void evdd_register_compare_function(evdd_value_type type,
                                     evdd_value_compare_function_t comparefun)
 {
     if (!evdd_value_check_type(type, "evdd_register_compare_function"))
+        return;
+    if (evdd_value_index_frozen(type, "compare"))
         return;
     evdd_value_functions_list[type].comparefun = comparefun;
 }
@@ -264,10 +298,22 @@ void evdd_register_sub_function(evdd_value_type type,
     evdd_value_functions_list[type].subfun = subfun;
 }
 
+/**
+    @brief Register the predicate that collapses a payload to bare zero.
+    @param type Value type the callback belongs to.
+    @param iszerofun Nonzero when the payload is the zero of this type.
+
+    Rejected once this type has an interned value. The predicate runs at
+    intern time, so a later one would leave an earlier zero on a typed id
+    while new zeros become EVDD_VALUE_ZERO. The previous registration is
+    left in place.
+*/
 void evdd_register_is_zero_function(evdd_value_type type,
                                     evdd_value_pred_function_t iszerofun)
 {
     if (!evdd_value_check_type(type, "evdd_register_is_zero_function"))
+        return;
+    if (evdd_value_index_frozen(type, "is_zero"))
         return;
     evdd_value_functions_list[type].iszerofun = iszerofun;
 }
@@ -686,7 +732,7 @@ evdd_value_id evdd_value_intern(void *value, evdd_value_type type)
         evdd_value_release(value, type);
         return EVDD_VALUE_ZERO;
     }
-    /* First stored row freezes later cell registration for this type. */
+    /* First stored row freezes hash, compare, cell, and is-zero. */
     evdd_value_functions_list[type].interned = 1;
     return (evdd_value_id)i;
 }
@@ -733,7 +779,7 @@ void evdd_value_done(void)
     evddValueUsed = 0;
     evddmaxValueSize = 0;
     evddLastValueIndex = 0;
-    /* No rows left, so a cell callback may be registered again. */
+    /* No rows left, so hash, compare, cell, and is-zero may be registered again. */
     if (evdd_value_functions_list != NULL) {
         for (i = 0; i < evdd_value_type_number; i++)
             evdd_value_functions_list[i].interned = 0;
