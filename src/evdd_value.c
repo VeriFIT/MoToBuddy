@@ -350,11 +350,25 @@ void evdd_register_sqrt_function(evdd_value_type type,
     evdd_value_functions_list[type].sqrtfun = sqrtfun;
 }
 
+/**
+    @brief Register the weight-normalization callback for a value type.
+    @param type Value type the callback belongs to.
+    @param normalizefun Rewrites the two outgoing weights. NULL clears it.
+
+    Rejected once evdd_set_normalization has frozen this type. A later
+    callback would normalize new nodes differently from ones already
+    built. The previous registration is left in place.
+*/
 void evdd_register_normalize_function(evdd_value_type type,
                                       evdd_value_normalize_function_t normalizefun)
 {
     if (!evdd_value_check_type(type, "evdd_register_normalize_function"))
         return;
+    if (evdd_value_functions_list[type].strategy_frozen) {
+        printf("Error: normalization already frozen for type %u\n", type);
+        bdd_error(BDD_OP);
+        return;
+    }
     evdd_value_functions_list[type].normalizefun = normalizefun;
 }
 
