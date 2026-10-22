@@ -45,6 +45,22 @@ PASS: typed ones uniquify
 PASS: get(ZERO) is NULL
 PASS: get(typed one) is non-NULL
 
+== intern index callback freeze ==
+PASS: hash freeze: register before intern replaces the callback
+Error: hash registration frozen for type 0 (values already interned)
+PASS: hash freeze: register after intern is rejected
+PASS: hash freeze: equal value keeps the first id
+Error: compare registration frozen for type 1 (values already interned)
+PASS: compare freeze: register after intern is rejected
+PASS: compare freeze: near values stay on the ids exact compare gave them
+Error: is_zero registration frozen for type 2 (values already interned)
+PASS: is_zero freeze: register after intern is rejected
+PASS: is_zero freeze: a later zero stays on the typed id
+PASS: mul stays mutable after intern
+PASS: mul after intern uses the new callback
+PASS: hash freeze: value_done allows a new hash
+PASS: hash freeze: the new hash still uniquifies
+
 == intern cell walk ==
 Error: cell axes 0 out of range in evdd_register_cell_function.
 PASS: cell walk: naxes 0 is rejected
@@ -346,5 +362,5 @@ PASS: dot hide0: no zero-weight low edge
 PASS: dot hide0: 1-terminal kept
 
 ----------------------------------------
-passed=259 failed=0
+passed=270 failed=0
 All tests passed.
