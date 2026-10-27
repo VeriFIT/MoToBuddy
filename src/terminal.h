@@ -1,6 +1,24 @@
 #ifndef TERMINAL_H
 #define TERMINAL_H
+/**
+ * Hash of a CUSTOM terminal payload.
+ *
+ * Payloads that compare equal must hash equal. A numeric compare that
+ * treats -0.0 and +0.0 as the same value, paired with a hash of the
+ * object bytes, stores both. Padding bytes, such as those in an x87
+ * long double, do the same. The diagram then stops being canonical.
+ */
 typedef unsigned (*mtbdd_terminal_hash_function_t)(void *);
+/**
+ * Nonzero if the two payloads are equal.
+ *
+ * Must be reflexive: compare(x, x) is nonzero for every payload that
+ * can be interned. A NaN under a plain == compare is not. Each copy
+ * misses the existing row, they share one hash bucket, and lookup
+ * becomes quadratic. Must be symmetric. An exact compare must be
+ * transitive. A tolerance compare is not, and MTBDD lookup has no
+ * neighbor probe, so it can miss an equal terminal.
+ */
 typedef int (*mtbdd_terminal_compare_function_t)(void *, void *);
 typedef void (*mtbdd_terminal_free_function_t)(void *);
 typedef char *(*mtbdd_terminal_to_str_function_t)(void *, char *, size_t);

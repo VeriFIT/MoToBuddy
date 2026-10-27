@@ -671,6 +671,34 @@ static int evdd_value_cell_lookup(void *value, evdd_value_type type,
     return 0;
 }
 
+#ifndef NDEBUG
+/* A new row must compare equal to itself, and a hash callback must return
+ * the same value twice. The row is stored either way. Release builds skip
+ * this. user_hashed means `hashed` came from the hash callback, not a cell. */
+static void evdd_value_check_new_row(void *value, evdd_value_type type,
+                                    evdd_value_compare_function_t cmp,
+                                    int user_hashed, unsigned hashed)
+{
+    evdd_value_hash_function_t hashfun = EVDDVALUEHASH(type);
+
+    if (cmp != NULL && !cmp(value, value)) {
+        printf("Error: compare for EVDD type %u is not reflexive\n", type);
+        bdd_error(BDD_OP);
+    }
+    if (hashfun == NULL)
+        return;
+    if (user_hashed) {
+        if (hashfun(value) != hashed) {
+            printf("Error: hash for EVDD type %u changed between calls\n", type);
+            bdd_error(BDD_OP);
+        }
+    } else if (hashfun(value) != hashfun(value)) {
+        printf("Error: hash for EVDD type %u changed between calls\n", type);
+        bdd_error(BDD_OP);
+    }
+}
+#endif
+
 /**
     @brief Intern a value into the evddValues table and the open-address index.
     @param value The value to intern.
@@ -682,6 +710,9 @@ evdd_value_id evdd_value_intern(void *value, evdd_value_type type)
     int from_free = 0;
     unsigned h = 0;
     int have_hash = 0;
+#ifndef NDEBUG
+    int user_hashed = 0;
+#endif
     int i;
     evdd_value_compare_function_t cmp;
 
@@ -718,6 +749,9 @@ evdd_value_id evdd_value_intern(void *value, evdd_value_type type)
     } else if (EVDDVALUEHASH(type)) {
         h = EVDDVALUEHASH(type)(value);
         have_hash = 1;
+#ifndef NDEBUG
+        user_hashed = 1;
+#endif
         if (evddValues != NULL && evdd_value_idx_cap != 0) {
             int found = evdd_value_idx_lookup(h, type, value, cmp);
             if (found != 0) {
@@ -736,6 +770,10 @@ evdd_value_id evdd_value_intern(void *value, evdd_value_type type)
             }
         }
     }
+
+#ifndef NDEBUG
+    evdd_value_check_new_row(value, type, cmp, user_hashed, h);
+#endif
 
     // store new value, in a slot freed by evdd_value_gbc if there is one
     if (evdd_value_nfree > 0) {

@@ -62,6 +62,8 @@ mtbdd_register_hash_function(leaf_id, my_hash);
 mtbdd_register_to_str_function(leaf_id, my_tostr);
 ```
 
+`my_cmp` and `my_hash` follow the contract on `mtbdd_terminal_compare_function_t` and `mtbdd_terminal_hash_function_t` in `src/terminal.h`: compare is reflexive, and payloads that compare equal hash equal. EVDD values use the same contract (`src/evdd_value.h`).
+
 Each terminal is created with:
 
 ```c
