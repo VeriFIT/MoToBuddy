@@ -10,6 +10,7 @@
  * evdd_normalize: DAG pass that weight-normalizes and re-uniques.
  */
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -28,6 +29,27 @@ EvddNode *evddnodes = NULL;
 int       evddfreepos = 0;
 int       evddfreenum = 0;
 int       evddproduced = 0;
+
+int *evddrefstack = NULL;
+int  evddrefstacktop = 0;
+int  evddrefstacksize = 0;
+
+#define EVDD_REFSTACK_INITIAL 1024
+
+void evdd_refstack_grow(void)
+{
+    int size = evddrefstacksize ? evddrefstacksize * 2 : EVDD_REFSTACK_INITIAL;
+    int *grown = (int *)realloc(evddrefstack, (size_t)size * sizeof(int));
+
+    /* Same policy as BuDDy's PUSHREF overflow: an unprotected node could be
+     * collected and reused while still in use, so do not continue. */
+    if (grown == NULL) {
+        fprintf(stderr, "evddrefstack: out of memory\n");
+        abort();
+    }
+    evddrefstack = grown;
+    evddrefstacksize = size;
+}
 
 static void evdd_clear_table_state(void)
 {
@@ -122,6 +144,10 @@ void evdd_done(void)
     evdd_operator_done();
     free(evddnodes);
     evdd_clear_table_state();
+    free(evddrefstack);
+    evddrefstack = NULL;
+    evddrefstacktop = 0;
+    evddrefstacksize = 0;
 }
 
 /* -------------------------------------------------------------------------
@@ -202,16 +228,29 @@ static int evdd_noderesize(void)
 
 EVDD evdd_makenode(unsigned int level, EVDD low, EVDD high)
 {
-    evddNormResult normalized_result = evdd_value_normalize(low.w, high.w);
+    evddNormResult normalized_result;
     EVDD newnode;
 
-    if (evdd_value_is_zero(normalized_result.incoming))
+    if (!evddrunning) {
+        bdd_error(BDD_RUNNING);
         return evdd_false();
+    }
+
+    /* Keep both children through a collection in makenode_raw. */
+    EVDD_PUSHREF(low.node);
+    EVDD_PUSHREF(high.node);
+    normalized_result = evdd_value_normalize(low.w, high.w);
+
+    if (evdd_value_is_zero(normalized_result.incoming)) {
+        EVDD_POPREF(2);
+        return evdd_false();
+    }
 
     low.w = normalized_result.w_low;
     high.w = normalized_result.w_high;
     newnode = evdd_makenode_raw(level, low, high);
     newnode.w = evdd_value_mul(normalized_result.incoming, newnode.w);
+    EVDD_POPREF(2);
     return newnode;
 }
 
@@ -314,7 +353,7 @@ static EVDD evdd_normalize_node(int node, EvddNormMemo *memo)
         low_e.w = evdd_value_mul(EVDDWLOW(node), low_e.w);
     }
     /* Low must stay marked while the high cofactor (and its makenodes) runs. */
-    evdd_addref(low_e);
+    EVDD_PUSHREF(low_e.node);
 
     if (EVDDISCONST(high_n)) {
         high_e.node = high_n;
@@ -323,15 +362,16 @@ static EVDD evdd_normalize_node(int node, EvddNormMemo *memo)
         high_e = evdd_normalize_node(high_n, memo);
         high_e.w = evdd_value_mul(EVDDWHIGH(node), high_e.w);
     }
-    evdd_addref(high_e);
+    EVDD_PUSHREF(high_e.node);
 
     out = evdd_makenode(EVDDLEVEL(node), low_e, high_e);
-    evdd_delref(low_e);
-    evdd_delref(high_e);
+    EVDD_POPREF(2);
 
-    /* Memo keeps the result alive until evdd_normalize finishes the walk.
-     * makenode leaves refcou at 0, and evdd_gbc does not clear this memo. */
-    evdd_addref(out);
+    /* The memo hands this result out again later in the walk, so it must
+     * survive every collection until evdd_normalize returns. One stack
+     * entry per memo slot: unlike a refcount it cannot saturate when many
+     * input nodes normalize to the same node (#18). */
+    EVDD_PUSHREF(out.node);
     memo[node].e = out;
     memo[node].set = 1;
     return out;
@@ -342,6 +382,7 @@ EVDD evdd_normalize(EVDD root)
     EvddNormMemo *memo;
     EVDD out;
     int n;
+    int saved;
 
     if (!evddrunning) {
         bdd_error(BDD_RUNNING);
@@ -365,15 +406,13 @@ EVDD evdd_normalize(EVDD root)
         return evdd_false();
     }
 
-    /* Pin the input diagram so a collection cannot reuse nodes still being read. */
-    evdd_addref(root);
+    /* Pin the input diagram so a collection cannot reuse nodes still being
+     * read; the memo results are pushed above it as the walk goes. */
+    saved = evddrefstacktop;
+    EVDD_PUSHREF(root.node);
     out = evdd_normalize_node(root.node, memo);
     out.w = evdd_value_mul(root.w, out.w);
-    for (int i = 0; i < n; i++) {
-        if (memo[i].set)
-            evdd_delref(memo[i].e);
-    }
-    evdd_delref(root);
+    evddrefstacktop = saved;
     free(memo);
     return out;
 }
@@ -461,6 +500,9 @@ void evdd_gbc(void)
             evdd_mark(n);
         evddnodes[n].hash = 0;
     }
+    /* And from nodes an operation in progress still holds. */
+    for (n = 0; n < evddrefstacktop; n++)
+        evdd_mark(evddrefstack[n]);
 
     evddfreepos = 0;
     evddfreenum = 0;
@@ -496,3 +538,4 @@ void evdd_gbc(void)
 
     evdd_operator_reset();
 }
+

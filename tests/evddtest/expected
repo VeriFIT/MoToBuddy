@@ -322,6 +322,13 @@ PASS: unique hit still works after gbc
 PASS: delref drops refcou to 0
 PASS: gbc frees node after last delref
 
+== evdd_normalize shared result ==
+PASS: shared result: evdd_init
+PASS: shared result: normalize returns a node
+PASS: shared result: reference stack unwinds
+PASS: shared result: no node keeps a reference after normalize
+PASS: shared result: everything is collected once the roots go
+
 == evdd_apply ==
 PASS: apply: evdd_init
 PASS: apply mul on TRUE edges multiplies weights
@@ -365,5 +372,5 @@ PASS: dot hide0: no zero-weight low edge
 PASS: dot hide0: 1-terminal kept
 
 ----------------------------------------
-passed=272 failed=0
+passed=277 failed=0
 All tests passed.

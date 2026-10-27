@@ -205,28 +205,25 @@ static EVDD evdd_apply_rec(EVDD a, EVDD b, evdd_apply_op op)
 
     if (la == lb) {
         r0 = evdd_apply_rec(evdd_edge_low(a), evdd_edge_low(b), op);
-        evdd_addref(r0);
+        EVDD_PUSHREF(r0.node);
         r1 = evdd_apply_rec(evdd_edge_high(a), evdd_edge_high(b), op);
-        evdd_addref(r1);
+        EVDD_PUSHREF(r1.node);
         res = evdd_makenode(la, r0, r1);
-        evdd_delref(r0);
-        evdd_delref(r1);
+        EVDD_POPREF(2);
     } else if (la < lb) {
         r0 = evdd_apply_rec(evdd_edge_low(a), b, op);
-        evdd_addref(r0);
+        EVDD_PUSHREF(r0.node);
         r1 = evdd_apply_rec(evdd_edge_high(a), b, op);
-        evdd_addref(r1);
+        EVDD_PUSHREF(r1.node);
         res = evdd_makenode(la, r0, r1);
-        evdd_delref(r0);
-        evdd_delref(r1);
+        EVDD_POPREF(2);
     } else {
         r0 = evdd_apply_rec(a, evdd_edge_low(b), op);
-        evdd_addref(r0);
+        EVDD_PUSHREF(r0.node);
         r1 = evdd_apply_rec(a, evdd_edge_high(b), op);
-        evdd_addref(r1);
+        EVDD_PUSHREF(r1.node);
         res = evdd_makenode(lb, r0, r1);
-        evdd_delref(r0);
-        evdd_delref(r1);
+        EVDD_POPREF(2);
     }
 
     EvddCache_store(entry, &evdd_applycache, a.node, a.w, b.node, b.w, opc,
@@ -258,5 +255,15 @@ EVDD evdd_apply(EVDD a, EVDD b, evdd_apply_op op)
         return evdd_false();
     }
 
-    return evdd_apply_rec(a, b, op);
+    {
+        EVDD res;
+        int saved = evddrefstacktop;
+
+        /* Operands stay alive through any collection during the walk. */
+        EVDD_PUSHREF(a.node);
+        EVDD_PUSHREF(b.node);
+        res = evdd_apply_rec(a, b, op);
+        evddrefstacktop = saved;
+        return res;
+    }
 }

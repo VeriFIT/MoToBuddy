@@ -139,6 +139,25 @@ extern int       evddproduced;
 
 void evdd_unmark(int i);
 
+/*
+ * Internal reference stack (cf. bddrefstack in kernel.h). Operations push
+ * the nodes they still need while a nested evdd_makenode may run evdd_gbc;
+ * evdd_gbc marks every entry. Unlike evdd_addref this never saturates, so
+ * a node pushed many times is still collectable once the stack unwinds.
+ * Entries may be EVDD_TRUE_NODE; marking ignores it.
+ */
+extern int *evddrefstack;
+extern int  evddrefstacktop;  /* number of live entries */
+extern int  evddrefstacksize; /* allocated entries */
+void evdd_refstack_grow(void);
+#define EVDD_PUSHREF(n)                                                        \
+    do {                                                                       \
+        if (evddrefstacktop >= evddrefstacksize)                               \
+            evdd_refstack_grow();                                              \
+        evddrefstack[evddrefstacktop++] = (n);                                 \
+    } while (0)
+#define EVDD_POPREF(k) (evddrefstacktop -= (k))
+
 #ifdef __cplusplus
 }
 #endif

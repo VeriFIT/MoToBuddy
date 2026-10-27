@@ -1354,6 +1354,53 @@ static void test_evdd_normalize_under_gc(void)
     teardown_values();
 }
 
+/* Bottom-level pairs (s, s/2) with a distinct s per pair: every bottom raw
+ * node normalizes to the same node (1, 1/2). */
+static EVDD build_shared_pairs(evdd_value_type t, unsigned level, int off, int len) {
+    if (len == 2) {
+        double s = 1.0 + off / 2;
+        return evdd_makenode_raw(level, evdd_const(intern_dbl(t, s)),
+                                 evdd_const(intern_dbl(t, s / 2)));
+    }
+    EVDD lo = evdd_addref(build_shared_pairs(t, level + 1, off, len / 2));
+    EVDD hi = evdd_addref(build_shared_pairs(t, level + 1, off + len / 2, len / 2));
+    EVDD r = evdd_makenode_raw(level, lo, hi);
+    evdd_delref(lo);
+    evdd_delref(hi);
+    return r;
+}
+
+/* #18: more than EVDD_MAXREF memo entries share one result node. */
+static void test_evdd_normalize_shared_result(void) {
+    printf("\n== evdd_normalize shared result ==\n");
+    teardown_values();
+    EXPECT(evdd_init(1 << 13) == 0, "shared result: evdd_init");
+    evdd_value_type t = register_dbl_type();
+    evdd_set_normalization(t, EVDD_NORMALIZE_FIRST_NONZERO);
+
+    /* 11 variables: 1024 bottom raw nodes, one normalized bottom node. */
+    EVDD raw = evdd_addref(build_shared_pairs(t, 0, 0, 1 << 11));
+    EVDD norm = evdd_normalize(raw);
+    EXPECT(norm.node != EVDD_TRUE_NODE, "shared result: normalize returns a node");
+    EXPECT(evddrefstacktop == 0, "shared result: reference stack unwinds");
+
+    evdd_delref(raw);
+    evdd_gbc();
+    int live = 0, pinned = 0;
+    for (int i = 1; i < evddnodesize; i++) {
+        if (EVDDISFREE(i))
+            continue;
+        live++;
+        if (evddnodes[i].refcou > 0)
+            pinned++;
+    }
+    EXPECT(pinned == 0, "shared result: no node keeps a reference after normalize");
+    EXPECT(live == 0, "shared result: everything is collected once the roots go");
+
+    evdd_done();
+    teardown_values();
+}
+
 static void test_evdd_refs_gbc(void) {
     printf("\n== refs / gbc ==\n");
 
@@ -1887,6 +1934,7 @@ int main(void) {
     test_evdd_normalize();
     test_evdd_normalize_under_gc();
     test_evdd_refs_gbc();
+    test_evdd_normalize_shared_result();
     test_evdd_apply();
     test_evdd_gates();
     test_evdd_dot();
