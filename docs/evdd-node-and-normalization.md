@@ -129,6 +129,10 @@ Natural uses of raw + diagram normalize: bulk MTBDD→EVDD, then one `evdd_norma
 
 Do not apply two raw (non-diagram-normalized) diagrams unless apply also diagram-normalizes, or you call `evdd_normalize` first. Same type still has one frozen weight-normalization strategy; `evdd_normalize` does not switch norms.
 
+# Garbage collection
+
+**Nodes.** `evdd_gbc` marks from nodes with `refcou > 0` (external roots, `evdd_addref`) and from an internal reference stack, then sweeps the rest onto the free list. Operations (`evdd_apply`, `evdd_normalize`, `evdd_makenode`) push the nodes they still need onto that stack instead of adding references, as BuDDy does with `bddrefstack`. Stack entries never saturate, so a node that many memo entries share is still collected once the operation returns. A collection can run inside any operation that creates nodes; results an operation returns are unreferenced, as in BuDDy, so a caller that keeps one across another operation must `evdd_addref` it.
+
 # Planned MTBDD ↔ EVDD transformation
 
 Both kernels stay live in one process (existing 20-byte `bddnodes` plus `evddnodes`). Conversion is an explicit walk, not pointer punning. Same CUSTOM payload `type_id` on both sides when the algebra matches. Used as the correctness oracle: apply a gate on each, convert, compare the represented vector.
