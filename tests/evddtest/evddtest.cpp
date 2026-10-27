@@ -1485,6 +1485,80 @@ static void test_value_gbc(void) {
     teardown_values();
 }
 
+/* Paths of the reference stack and value collection the main tests miss. */
+static void test_value_gbc_edges(void) {
+    printf("\n== value gbc edge cases ==\n");
+    teardown_values();
+
+    /* No table yet, EVDD not running: nothing to sweep, nothing to mark. */
+    EXPECT(evdd_value_gbc() == 0, "value gbc edges: empty table frees nothing");
+    reset_errors();
+    EVDD z = evdd_makenode(0, evdd_false(), evdd_false());
+    EXPECT(EVDDISFALSE(z) && g_last_error == BDD_RUNNING,
+           "value gbc edges: makenode before evdd_init is rejected");
+
+    /* A type without a hash is never indexed: the index stays empty. */
+    evdd_value_type plain = evdd_new_value_type();
+    evdd_register_compare_function(plain, dbl_cmp);
+    evdd_register_free_function(plain, int_free_internals);
+    evdd_value_id kept = evdd_value_addref(intern_dbl(plain, 1.5));
+    intern_dbl(plain, 2.5);
+    EXPECT(evdd_value_gbc() == 1 && nearly(get_dbl(kept), 1.5),
+           "value gbc edges: unindexed type collects without an index");
+    EXPECT(intern_dbl(plain, 1.5) == kept, "value gbc edges: linear lookup still finds it");
+
+    /* Bad ids are reported; ZERO is ignored; delref at zero does not wrap. */
+    reset_errors();
+    evdd_value_addref((evdd_value_id)100000);
+    EXPECT(g_last_error == BDD_ILLBDD, "value gbc edges: addref of an unknown id is reported");
+    reset_errors();
+    evdd_value_delref((evdd_value_id)100000);
+    EXPECT(g_last_error == BDD_ILLBDD, "value gbc edges: delref of an unknown id is reported");
+    reset_errors();
+    EXPECT(evdd_value_addref(EVDD_VALUE_ZERO) == EVDD_VALUE_ZERO &&
+               evdd_value_delref(EVDD_VALUE_ZERO) == EVDD_VALUE_ZERO && g_error_count == 0,
+           "value gbc edges: ZERO needs no reference");
+    evdd_value_id loose = intern_dbl(plain, 3.5);
+    evdd_value_delref(loose);
+    EXPECT(evdd_value_gbc() == 1 && evdd_value_get(loose) == NULL,
+           "value gbc edges: delref without addref does not keep a value");
+
+    /* An indexed type next to surviving unindexed rows; a long free list. */
+    EXPECT(evdd_init(64) == 0, "value gbc edges: evdd_init");
+    evdd_value_type t = register_dbl_type();
+    evdd_set_normalization(t, EVDD_NORMALIZE_FIRST_NONZERO);
+    for (int i = 0; i < 100; i++)
+        intern_dbl(t, 10.0 + i);
+    EXPECT(evdd_value_gbc() == 100, "value gbc edges: a hundred loose values are freed");
+    EXPECT(nearly(get_dbl(kept), 1.5) && intern_dbl(plain, 1.5) == kept,
+           "value gbc edges: unindexed survivor is skipped by the index rebuild");
+    EXPECT(intern_dbl(t, 10.0) == intern_dbl(t, 10.0), "value gbc edges: indexed type still uniquifies");
+
+    /* Zero incoming weight returns false and unwinds the stack. */
+    z = evdd_makenode(0, evdd_false(), evdd_false());
+    EXPECT(EVDDISFALSE(z) && evddrefstacktop == 0,
+           "value gbc edges: zero makenode unwinds the stack");
+
+    /* apply where the second operand's top variable comes first. */
+    EVDD one = evdd_const(intern_dbl(t, 1.0));
+    EVDD x1 = evdd_addref(evdd_makenode(1, evdd_const(intern_dbl(t, 2.0)), one));
+    EVDD x0 = evdd_addref(evdd_makenode(0, one, evdd_const(intern_dbl(t, 3.0))));
+    EVDD sum = evdd_apply(x1, x0, evdd_value_add);
+    /* f(x0, x1) = (x1 ? 1 : 2) + (x0 ? 3 : 1); at x0 = 1, x1 = 0: 2 + 3. */
+    EVDD at = sum;
+    double w = get_dbl(at.w);
+    while (at.node != EVDD_TRUE_NODE) {
+        int bit = EVDDLEVEL(at.node) == 0 ? 1 : 0;
+        w *= get_dbl(bit ? EVDDWHIGH(at.node) : EVDDWLOW(at.node));
+        at.node = bit ? EVDDHIGH(at.node) : EVDDLOW(at.node);
+    }
+    EXPECT(nearly(w, 5.0) && evddrefstacktop == 0,
+           "value gbc edges: apply with the right operand on top");
+
+    evdd_done();
+    teardown_values();
+}
+
 static void test_evdd_refs_gbc(void) {
     printf("\n== refs / gbc ==\n");
 
@@ -2020,6 +2094,7 @@ int main(void) {
     test_evdd_refs_gbc();
     test_evdd_normalize_shared_result();
     test_value_gbc();
+    test_value_gbc_edges();
     test_evdd_apply();
     test_evdd_gates();
     test_evdd_dot();

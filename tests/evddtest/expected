@@ -350,6 +350,22 @@ Error: evdd_value_gbc called during an EVDD operation
 PASS: value gbc: rejected from a callback during an operation
 PASS: value gbc: reference stack is empty after makenode
 
+== value gbc edge cases ==
+PASS: value gbc edges: empty table frees nothing
+PASS: value gbc edges: makenode before evdd_init is rejected
+PASS: value gbc edges: unindexed type collects without an index
+PASS: value gbc edges: linear lookup still finds it
+PASS: value gbc edges: addref of an unknown id is reported
+PASS: value gbc edges: delref of an unknown id is reported
+PASS: value gbc edges: ZERO needs no reference
+PASS: value gbc edges: delref without addref does not keep a value
+PASS: value gbc edges: evdd_init
+PASS: value gbc edges: a hundred loose values are freed
+PASS: value gbc edges: unindexed survivor is skipped by the index rebuild
+PASS: value gbc edges: indexed type still uniquifies
+PASS: value gbc edges: zero makenode unwinds the stack
+PASS: value gbc edges: apply with the right operand on top
+
 == evdd_apply ==
 PASS: apply: evdd_init
 PASS: apply mul on TRUE edges multiplies weights
@@ -393,5 +409,5 @@ PASS: dot hide0: no zero-weight low edge
 PASS: dot hide0: 1-terminal kept
 
 ----------------------------------------
-passed=295 failed=0
+passed=309 failed=0
 All tests passed.
