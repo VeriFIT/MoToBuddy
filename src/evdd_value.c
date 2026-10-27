@@ -28,12 +28,19 @@ int evddLastValueIndex = 0;
 #define EVDD_VALUE_UNTYPED ((evdd_value_type) - 1)
 
 typedef struct s_EvddValueRow {
-    void *payload;
+    void *payload;          /* NULL: free slot (on the free list) */
     evdd_value_type type;
     unsigned hash;
+    unsigned refcou;        /* external refs: evdd_value_addref, evdd_addref */
+    unsigned char mark;     /* set by evdd_value_mark during evdd_value_gbc */
 } EvddValueRow;
 
 static EvddValueRow *evddValues = NULL;
+
+/* Ids freed by evdd_value_sweep, reused by evdd_value_intern (LIFO). */
+static int *evdd_value_freelist = NULL;
+static int evdd_value_nfree = 0;
+static int evdd_value_freecap = 0;
 
 static evddNormResult evdd_norm_first_nonzero(evdd_value_id w_low,
                                               evdd_value_id w_high);
@@ -443,9 +450,9 @@ void evdd_value_types_done(void)
  * Open-addressing index over evddValues.
  * Exact types key by (payload hash, type). A registered cell function keys
  * by a hash of its cell ids plus type, and lookup walks every neighbor
- * (each axis at -1, 0, +1). Rows are append-only and wiped wholesale in
- * evdd_value_done, so the index never deletes. Slot 0 means empty; row
- * indices start at 1 (bare ZERO).
+ * (each axis at -1, 0, +1). The index never deletes a single entry:
+ * evdd_value_sweep rebuilds it after freeing rows, and evdd_value_done
+ * wipes it. Slot 0 means empty; row indices start at 1 (bare ZERO).
  */
 static int *evdd_value_idx = NULL;       /* open-address table; 0 = empty slot */
 static unsigned evdd_value_idx_cap = 0;  /* number of slots (power of two) */
@@ -606,8 +613,10 @@ static int evdd_value_idx_lookup(unsigned h, evdd_value_type type, void *value,
     for (; evdd_value_idx[k] != 0; k = (k + 1u) & (evdd_value_idx_cap - 1u)) {
         int j = evdd_value_idx[k];
 
-        /* Another type, or a different key that only collided into this slot. */
-        if (evddValues[j].type != type || evddValues[j].hash != h)
+        /* Another type, or a different key that only collided into this slot.
+         * A freed row can linger here if an index rebuild ran out of memory. */
+        if (evddValues[j].payload == NULL || evddValues[j].type != type ||
+            evddValues[j].hash != h)
             continue;
         if (cmp ? cmp(value, evddValues[j].payload) : value == evddValues[j].payload)
             return j;
@@ -670,6 +679,7 @@ static int evdd_value_cell_lookup(void *value, evdd_value_type type,
 */
 evdd_value_id evdd_value_intern(void *value, evdd_value_type type)
 {
+    int from_free = 0;
     unsigned h = 0;
     int have_hash = 0;
     int i;
@@ -727,21 +737,30 @@ evdd_value_id evdd_value_intern(void *value, evdd_value_type type)
         }
     }
 
-    if (!evdd_value_ensure_table()) {
-        evdd_value_release(value, type);
-        return EVDD_VALUE_ZERO;
+    // store new value, in a slot freed by evdd_value_gbc if there is one
+    if (evdd_value_nfree > 0) {
+        i = evdd_value_freelist[--evdd_value_nfree];
+        from_free = 1;
+    } else {
+        if (!evdd_value_ensure_table()) {
+            evdd_value_release(value, type);
+            return EVDD_VALUE_ZERO;
+        }
+        i = evddLastValueIndex++;
     }
-
-    // store new value
-    i = evddLastValueIndex++;
     evddValues[i].payload = value;
     evddValues[i].type = type;
     evddValues[i].hash = h;
+    evddValues[i].refcou = 0;
+    evddValues[i].mark = 0;
     evddValueUsed++;
 
     if (have_hash && !evdd_value_idx_put(i)) {
         evddValues[i].payload = NULL;
-        evddLastValueIndex--;
+        if (from_free)
+            evdd_value_freelist[evdd_value_nfree++] = i;
+        else
+            evddLastValueIndex--;
         evddValueUsed--;
         evdd_value_release(value, type);
         return EVDD_VALUE_ZERO;
@@ -790,6 +809,10 @@ void evdd_value_done(void)
         evddValues = NULL;
     }
     evdd_value_idx_clear();
+    free(evdd_value_freelist);
+    evdd_value_freelist = NULL;
+    evdd_value_nfree = 0;
+    evdd_value_freecap = 0;
     evddValueUsed = 0;
     evddmaxValueSize = 0;
     evddLastValueIndex = 0;
@@ -798,6 +821,118 @@ void evdd_value_done(void)
         for (i = 0; i < evdd_value_type_number; i++)
             evdd_value_functions_list[i].interned = 0;
     }
+}
+
+/* A live, non-ZERO row; ZERO and freed ids are not counted. */
+static int evdd_value_live(evdd_value_id id)
+{
+    return id != EVDD_VALUE_ZERO && evddValues != NULL &&
+           (int)id < evddLastValueIndex && evddValues[id].payload != NULL;
+}
+
+evdd_value_id evdd_value_addref(evdd_value_id id)
+{
+    if (id == EVDD_VALUE_ZERO)
+        return id;
+    if (!evdd_value_live(id)) {
+        bdd_error(BDD_ILLBDD);
+        return id;
+    }
+    evddValues[id].refcou++;
+    return id;
+}
+
+evdd_value_id evdd_value_delref(evdd_value_id id)
+{
+    if (id == EVDD_VALUE_ZERO)
+        return id;
+    if (!evdd_value_live(id)) {
+        bdd_error(BDD_ILLBDD);
+        return id;
+    }
+    if (evddValues[id].refcou > 0)
+        evddValues[id].refcou--;
+    return id;
+}
+
+void evdd_value_mark(evdd_value_id id)
+{
+    if (evdd_value_live(id))
+        evddValues[id].mark = 1;
+}
+
+/* Index every live row of an indexed type into a fresh table of the current
+ * capacity. On allocation failure the old index stays: lookups skip its
+ * freed rows, so it only costs extra probes. */
+static void evdd_value_idx_rebuild(void)
+{
+    unsigned cap = evdd_value_idx_cap;
+    int *fresh;
+    int i;
+
+    if (cap == 0)
+        return;
+    fresh = (int *)calloc(cap, sizeof(int));
+    if (fresh == NULL) {
+        bdd_error(BDD_MEMORY);
+        return;
+    }
+    free(evdd_value_idx);
+    evdd_value_idx = fresh;
+    evdd_value_idx_cnt = 0;
+    for (i = 1; i < evddLastValueIndex; i++) {
+        evdd_value_type t;
+        if (evddValues[i].payload == NULL)
+            continue;
+        t = evddValues[i].type;
+        /* Hash and cell callbacks are frozen once a type has rows, so the
+         * type still says whether its rows were indexed. */
+        if (EVDDVALUECELL(t) == NULL && EVDDVALUEHASH(t) == NULL)
+            continue;
+        evdd_value_idx_put(i);
+    }
+}
+
+int evdd_value_sweep(void)
+{
+    int i;
+    int freed = 0;
+
+    if (evddValues == NULL)
+        return 0;
+
+    for (i = 1; i < evddLastValueIndex; i++) {
+        EvddValueRow *row = &evddValues[i];
+
+        if (row->payload == NULL)
+            continue;
+        if (row->mark || row->refcou > 0) {
+            row->mark = 0;
+            continue;
+        }
+        if (evdd_value_nfree >= evdd_value_freecap) {
+            int cap = evdd_value_freecap ? evdd_value_freecap * 2 : 64;
+            int *grown = (int *)realloc(evdd_value_freelist, (size_t)cap * sizeof(int));
+            if (grown == NULL) {
+                /* Keep the value rather than lose track of its slot. */
+                bdd_error(BDD_MEMORY);
+                continue;
+            }
+            evdd_value_freelist = grown;
+            evdd_value_freecap = cap;
+        }
+        evdd_value_release(row->payload, row->type);
+        row->payload = NULL;
+        row->type = 0;
+        row->hash = 0;
+        evdd_value_freelist[evdd_value_nfree++] = i;
+        evddValueUsed--;
+        freed++;
+    }
+
+    if (freed > 0)
+        evdd_value_idx_rebuild();
+    return freed;
 }
 
 /* -------------------------------------------------------------------------

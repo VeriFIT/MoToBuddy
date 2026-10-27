@@ -168,6 +168,21 @@ void *evdd_value_get(evdd_value_id id);
 evdd_value_type evdd_value_get_type(evdd_value_id id);
 void evdd_value_done(void);
 
+/**
+ * Keep @p id alive across @c evdd_value_gbc (a count, like evdd_addref).
+ * ZERO is ignored. Ids that appear only as weights on live nodes need no
+ * reference; ids a program holds itself (e.g. gate constants) do.
+ */
+evdd_value_id evdd_value_addref(evdd_value_id id);
+/** Undo one @c evdd_value_addref. */
+evdd_value_id evdd_value_delref(evdd_value_id id);
+
+/* Internal, used by evdd_value_gbc in evdd_kernel.c: mark an id as in use,
+ * then free every unmarked row without references and clear the marks.
+ * Returns the number of values freed. */
+void evdd_value_mark(evdd_value_id id);
+int evdd_value_sweep(void);
+
 /* -------------------------------------------------------------------------
  * Algebra on interned ids (hard error on type mismatch).
  * Bare ZERO: get() is NULL; callbacks treat NULL as 0. Identity is typed;

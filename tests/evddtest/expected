@@ -329,6 +329,27 @@ PASS: shared result: reference stack unwinds
 PASS: shared result: no node keeps a reference after normalize
 PASS: shared result: everything is collected once the roots go
 
+== value gbc ==
+PASS: value gbc: evdd_init
+PASS: value gbc: frees the two values nothing holds
+PASS: value gbc: unreferenced id is freed
+PASS: value gbc: payloads go through the free callback
+PASS: value gbc: weights on a live node survive
+PASS: value gbc: addref'd edge keeps its incoming weight
+PASS: value gbc: value_addref keeps an id
+PASS: value gbc: index still finds a surviving value
+PASS: value gbc: new values reuse the freed slots
+PASS: value gbc: same function gives the same node afterwards
+PASS: value gbc: node is collected after its last delref
+PASS: value gbc: its weights go with it
+PASS: value gbc: referenced id outlives the diagrams
+PASS: value gbc: last value_delref lets the id go
+PASS: value gbc: addref on a constant edge keeps its weight
+PASS: value gbc: delref on a constant edge releases it
+Error: evdd_value_gbc called during an EVDD operation
+PASS: value gbc: rejected from a callback during an operation
+PASS: value gbc: reference stack is empty after makenode
+
 == evdd_apply ==
 PASS: apply: evdd_init
 PASS: apply mul on TRUE edges multiplies weights
@@ -372,5 +393,5 @@ PASS: dot hide0: no zero-weight low edge
 PASS: dot hide0: 1-terminal kept
 
 ----------------------------------------
-passed=277 failed=0
+passed=295 failed=0
 All tests passed.

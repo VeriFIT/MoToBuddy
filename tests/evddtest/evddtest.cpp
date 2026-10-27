@@ -1401,6 +1401,90 @@ static void test_evdd_normalize_shared_result(void) {
     teardown_values();
 }
 
+static int g_gc_ret = 0;
+
+/* Normalization callback that tries to collect values mid-operation. */
+static evddNormResult gc_in_callback(evdd_value_id w_low, evdd_value_id w_high) {
+    evddNormResult r;
+    g_gc_ret = evdd_value_gbc();
+    r.w_low = w_low;
+    r.w_high = w_high;
+    r.incoming = evdd_value_unit_from_pair(w_low, w_high);
+    return r;
+}
+
+/* #15: evdd_value_gbc frees values no live node or reference holds. */
+static void test_value_gbc(void) {
+    printf("\n== value gbc ==\n");
+    teardown_values();
+    EXPECT(evdd_init(64) == 0, "value gbc: evdd_init");
+    evdd_value_type t = register_dbl_type();
+    evdd_set_normalization(t, EVDD_NORMALIZE_FIRST_NONZERO);
+
+    /* f(0) = 2, f(1) = 6: incoming 2, weights 1 and 3. Input 6 is unused. */
+    EVDD root = evdd_addref(evdd_makenode(0, evdd_const(intern_dbl(t, 2.0)),
+                                          evdd_const(intern_dbl(t, 6.0))));
+    evdd_value_id w_low = EVDDWLOW(root.node);
+    evdd_value_id w_high = EVDDWHIGH(root.node);
+    evdd_value_id w_in = root.w;
+    evdd_value_id keep = evdd_value_addref(intern_dbl(t, 7.0));
+    evdd_value_id drop = intern_dbl(t, 5.0);
+    int used = evddValueUsed;
+    int last = evddLastValueIndex;
+    int frees = g_freefun_calls;
+
+    int freed = evdd_value_gbc();
+    EXPECT(freed == 2 && evddValueUsed == used - 2,
+           "value gbc: frees the two values nothing holds");
+    EXPECT(evdd_value_get(drop) == NULL, "value gbc: unreferenced id is freed");
+    EXPECT(g_freefun_calls == frees + 2, "value gbc: payloads go through the free callback");
+    EXPECT(nearly(get_dbl(w_low), 1.0) && nearly(get_dbl(w_high), 3.0),
+           "value gbc: weights on a live node survive");
+    EXPECT(nearly(get_dbl(w_in), 2.0), "value gbc: addref'd edge keeps its incoming weight");
+    EXPECT(nearly(get_dbl(keep), 7.0), "value gbc: value_addref keeps an id");
+
+    EXPECT(intern_dbl(t, 3.0) == w_high, "value gbc: index still finds a surviving value");
+    evdd_value_id nine = intern_dbl(t, 9.0);
+    evdd_value_id six = intern_dbl(t, 6.0);
+    EXPECT(evddLastValueIndex == last && nine < (unsigned)last && six < (unsigned)last,
+           "value gbc: new values reuse the freed slots");
+    EVDD same = evdd_makenode(0, evdd_const(intern_dbl(t, 2.0)), evdd_const(six));
+    EXPECT(same.node == root.node && same.w == root.w,
+           "value gbc: same function gives the same node afterwards");
+
+    evdd_delref(root);
+    evdd_value_gbc();
+    EXPECT(EVDDISFREE(root.node), "value gbc: node is collected after its last delref");
+    EXPECT(evdd_value_get(w_low) == NULL && evdd_value_get(w_high) == NULL &&
+               evdd_value_get(w_in) == NULL,
+           "value gbc: its weights go with it");
+    EXPECT(nearly(get_dbl(keep), 7.0), "value gbc: referenced id outlives the diagrams");
+    evdd_value_delref(keep);
+    evdd_value_gbc();
+    EXPECT(evdd_value_get(keep) == NULL && evddValueUsed == 0,
+           "value gbc: last value_delref lets the id go");
+
+    EVDD c = evdd_addref(evdd_const(intern_dbl(t, 4.0)));
+    evdd_value_gbc();
+    EXPECT(nearly(get_dbl(c.w), 4.0), "value gbc: addref on a constant edge keeps its weight");
+    evdd_delref(c);
+    evdd_value_gbc();
+    EXPECT(evdd_value_get(c.w) == NULL, "value gbc: delref on a constant edge releases it");
+
+    evdd_value_type g = register_dbl_type();
+    evdd_register_normalize_function(g, gc_in_callback);
+    evdd_set_normalization(g, EVDD_NORMALIZE_CUSTOM);
+    reset_errors();
+    g_gc_ret = 0;
+    evdd_makenode(0, evdd_const(intern_dbl(g, 2.0)), evdd_const(intern_dbl(g, 3.0)));
+    EXPECT(g_gc_ret == BDD_OP && g_last_error == BDD_OP,
+           "value gbc: rejected from a callback during an operation");
+    EXPECT(evddrefstacktop == 0, "value gbc: reference stack is empty after makenode");
+
+    evdd_done();
+    teardown_values();
+}
+
 static void test_evdd_refs_gbc(void) {
     printf("\n== refs / gbc ==\n");
 
@@ -1935,6 +2019,7 @@ int main(void) {
     test_evdd_normalize_under_gc();
     test_evdd_refs_gbc();
     test_evdd_normalize_shared_result();
+    test_value_gbc();
     test_evdd_apply();
     test_evdd_gates();
     test_evdd_dot();
