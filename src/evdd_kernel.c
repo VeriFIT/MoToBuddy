@@ -236,7 +236,9 @@ EVDD evdd_makenode(unsigned int level, EVDD low, EVDD high)
         return evdd_false();
     }
 
-    /* Keep both children through a collection in makenode_raw. */
+    /* Keep both children through a collection in makenode_raw. The pushes
+     * also mark an operation in progress for evdd_value_gbc, which must not
+     * run from a normalization callback while these weights are in flight. */
     EVDD_PUSHREF(low.node);
     EVDD_PUSHREF(high.node);
     normalized_result = evdd_value_normalize(low.w, high.w);
@@ -419,8 +421,10 @@ EVDD evdd_normalize(EVDD root)
 
 EVDD evdd_addref(EVDD root)
 {   
-   if (EVDDISCONST(root.node) || !evddrunning)
+   if (EVDDISCONST(root.node) || !evddrunning) {
+      evdd_value_addref(root.w);
       return root;
+   }
    if (root.node >= evddnodesize)
    {
       bdd_error(BDD_ILLBDD);
@@ -433,13 +437,16 @@ EVDD evdd_addref(EVDD root)
    }
 
    EVDDINCREF(root.node);
+   evdd_value_addref(root.w);
    return root;
 }
 
 EVDD evdd_delref(EVDD root)
 {   
-   if (EVDDISCONST(root.node) || !evddrunning)
+   if (EVDDISCONST(root.node) || !evddrunning) {
+      evdd_value_delref(root.w);
       return root;
+   }
    if (root.node >= evddnodesize)
    {
       bdd_error(BDD_ILLBDD);
@@ -452,6 +459,7 @@ EVDD evdd_delref(EVDD root)
    }
 
    EVDDDECREF(root.node);
+   evdd_value_delref(root.w);
    return root;
 }
 
@@ -539,3 +547,25 @@ void evdd_gbc(void)
     evdd_operator_reset();
 }
 
+int evdd_value_gbc(void)
+{
+    int n;
+
+    /* Value ids an operation holds in C locals are not on any node yet;
+     * collecting values now would free them. */
+    if (evddrefstacktop > 0) {
+        printf("Error: evdd_value_gbc called during an EVDD operation\n");
+        return bdd_error(BDD_OP);
+    }
+
+    if (evddrunning) {
+        evdd_gbc();
+        for (n = 1; n < evddnodesize; n++) {
+            if (EVDDISFREE(n))
+                continue;
+            evdd_value_mark(EVDDWLOW(n));
+            evdd_value_mark(EVDDWHIGH(n));
+        }
+    }
+    return evdd_value_sweep();
+}

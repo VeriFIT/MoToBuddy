@@ -70,12 +70,13 @@ EVDD evdd_makenode_raw(unsigned int level, EVDD low, EVDD high);
 EVDD evdd_normalize(EVDD root);
 
 /**
- * Increment the reference count of a node.
+ * Increment the reference count of @p root's node and of its incoming
+ * weight, so both survive @c evdd_gbc and @c evdd_value_gbc.
 */
 EVDD evdd_addref(EVDD root);
 
 /**
- * Decrement the reference count of a node.
+ * Undo one @c evdd_addref: decrement the node's and the weight's counts.
 */
 EVDD evdd_delref(EVDD root);
 
@@ -86,6 +87,21 @@ EVDD evdd_delref(EVDD root);
  * rest onto the freelist, and rebuilds the unique-table hash.
  */
 void evdd_gbc(void);
+
+/**
+ * Collect unused interned values.
+ *
+ * Runs @c evdd_gbc, then frees every value that is neither a weight on a
+ * live node nor referenced (through @c evdd_addref on an edge or
+ * @c evdd_value_addref on an id). Freed ids are reused by later interns,
+ * so an unreferenced id held across this call becomes invalid.
+ *
+ * Never runs on its own: @c evdd_gbc inside an operation collects nodes
+ * only, because operations hold value ids in locals. Call it between
+ * operations. Returns the number of values freed, or @c BDD_OP when
+ * called during an EVDD operation (e.g. from a value callback).
+ */
+int evdd_value_gbc(void);
 
 /**
  * Print @p root as Graphviz DOT (implemented in bddio.c).
