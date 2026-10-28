@@ -37,6 +37,14 @@ typedef unsigned evdd_value_type;
  * Callbacks (payloads are user pointers, same contract as mtbdd terminals)
  * ---------------------------------------------------------------------- */
 
+/**
+ * Hash of an EVDD value payload.
+ *
+ * Payloads that compare equal must hash equal. A numeric compare that
+ * treats -0.0 and +0.0 as the same value, paired with a hash of the
+ * object bytes, stores both. Padding bytes, such as those in an x87
+ * long double, do the same. The diagram then stops being canonical.
+ */
 typedef unsigned (*evdd_value_hash_function_t)(void *);
 /**
  * Writes one signed cell id per axis into @p cell (length is the naxes
@@ -49,7 +57,18 @@ typedef unsigned (*evdd_value_hash_function_t)(void *);
 typedef void (*evdd_value_cell_function_t)(void *payload, long long *cell);
 /** Largest naxes evdd_register_cell_function accepts. Probe count is 3^naxes. */
 #define EVDD_VALUE_MAX_AXES 4
-/** Nonzero if equal (same convention as mtbdd_terminal_compare_function_t). */
+/**
+ * Nonzero if the two payloads are equal (same convention as
+ * mtbdd_terminal_compare_function_t).
+ *
+ * Must be reflexive: compare(x, x) is nonzero for every payload that
+ * can be interned. A NaN under a plain == compare is not. Each copy
+ * misses the existing row, they share one hash bucket, and lookup
+ * becomes quadratic. Must be symmetric. An exact compare must be
+ * transitive. A tolerance compare is not; the cell probe and its
+ * first-match rule are what make one usable. Equal values must lie
+ * at most one cell apart on each axis (see evdd_value_cell_function_t).
+ */
 typedef int (*evdd_value_compare_function_t)(void *, void *);
 typedef void (*evdd_value_free_function_t)(void *);
 typedef char *(*evdd_value_to_str_function_t)(void *, char *, size_t);

@@ -94,6 +94,29 @@ int mtbdd_init(int initnodesize, int cs) {
 }
 
 
+#ifndef NDEBUG
+/* A new CUSTOM terminal must compare equal to itself, and a hash callback
+ * must return the same value that selected its bucket. The terminal is
+ * stored either way. Release builds skip this. */
+static void mtbdd_check_new_terminal(void *value, mtbdd_terminal_type type,
+                                    mtbdd_terminal_hash_function_t hashfun,
+                                    unsigned hashed)
+{
+   mtbdd_terminal_compare_function_t cmp = CUSTOMCOMPARE(type);
+
+   if (cmp != NULL && !cmp(value, value)) {
+      printf("Error: compare for MTBDD terminal type %u is not reflexive\n",
+             type);
+      bdd_error(BDD_OP);
+   }
+   if (hashfun != NULL && hashfun(value) != hashed) {
+      printf("Error: hash for MTBDD terminal type %u changed between calls\n",
+             type);
+      bdd_error(BDD_OP);
+   }
+}
+#endif
+
 /**
  * @brief Function creating terminal node.
  * 
@@ -168,7 +191,11 @@ int mtbdd_maketerminal(void *value, mtbdd_terminal_type type) {
             mtbdd_release_temp_value(value, type);
             return foundTerminal;
          }
-         
+
+#ifndef NDEBUG
+         mtbdd_check_new_terminal(value, type, hashfun, custom);
+#endif
+
          {
             int valIndex = mtbdd_insertvalue(value);
             foundTerminal = bdd_makenode(MAXLEVEL, custom, 42);

@@ -100,6 +100,8 @@ Weight-normalization rewrites the two outgoing weights and pushes a factor onto 
 
 **Value domain is independent.** Built-ins (double, int, later complex double) register mul/div themselves. CUSTOM registers hash, equal, free, mul, and whatever the chosen strategy needs. If a type cannot implement L2 (no sqrt), that strategy is rejected at set-normalization, not in the middle of makenode.
 
+**Hash and compare.** An interned payload is found by hash (or cell) and then compare. The callbacks must be reflexive, and equal payloads must hash equal. See `evdd_value_hash_function_t` and `evdd_value_compare_function_t` in `src/evdd_value.h`.
+
 # Types and normalization (locked policy)
 
 Follow MTBDD CUSTOM: several type ids share one unique table. The flag lives on the interned value row, not on `EvddNode` and not as a second `SETDOMAIN` union. Mixing storage layouts (a global `double[]` together with CUSTOM pointers) is not allowed. Built-in double or complex, if present, are registered type ids with stock callbacks, so they use the same mechanism as CUSTOM.
